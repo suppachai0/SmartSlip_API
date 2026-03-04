@@ -5,13 +5,16 @@ export interface IReceipt extends Document {
   transactionId: string;
   amount: number;
   currency: string;
-  status: 'pending' | 'completed' | 'failed';
-  paymentMethod: string;
-  customerEmail: string;
-  customerName: string;
-  receiptNumber: string;
+  status: 'pending' | 'reviewing' | 'completed' | 'failed';
+  paymentMethod?: string;
+  customerEmail?: string;
+  customerName?: string;
+  receiptNumber?: string;
   issueDate: Date;
   dueDate?: Date;
+  storeName: string;
+  userId: string;
+  imageURL?: string;
   items?: {
     description: string;
     quantity: number;
@@ -42,27 +45,37 @@ const receiptSchema = new Schema<IReceipt>(
     },
     status: {
       type: String,
-      enum: ['pending', 'completed', 'failed'],
+      enum: ['pending', 'reviewing', 'completed', 'failed'],
       default: 'pending',
       index: true,
     },
     paymentMethod: {
       type: String,
-      required: true,
     },
     customerEmail: {
       type: String,
-      required: true,
       index: true,
     },
     customerName: {
       type: String,
-      required: true,
     },
     receiptNumber: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
+    },
+    storeName: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    userId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    imageURL: {
+      type: String,
     },
     issueDate: {
       type: Date,
