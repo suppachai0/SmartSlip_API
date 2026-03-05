@@ -5,7 +5,7 @@ export interface IReceipt extends Document {
   transactionId: string;
   amount: number;
   currency: string;
-  status: 'pending' | 'reviewing' | 'completed' | 'failed';
+  status: 'pending' | 'reviewing' | 'approved' | 'rejected' | 'completed' | 'failed';
   paymentMethod?: string;
   customerEmail?: string;
   customerName?: string;
@@ -45,7 +45,7 @@ const receiptSchema = new Schema<IReceipt>(
     },
     status: {
       type: String,
-      enum: ['pending', 'reviewing', 'completed', 'failed'],
+      enum: ['pending', 'reviewing', 'approved', 'rejected', 'completed', 'failed'],
       default: 'pending',
       index: true,
     },
