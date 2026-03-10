@@ -1,0 +1,242 @@
+{
+  "info": {
+    "_postman_id": "smartslip-api-collection",
+    "name": "SmartSlip API Testing",
+    "description": "Complete API testing for SmartSlip Receipts",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Receipts",
+      "item": [
+        {
+          "name": "1. Create Receipt (POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeName\": \"ร้านเสร็จ\",\n  \"totalAmount\": 5500,\n  \"userId\": \"user123\",\n  \"items\": [\n    {\n      \"description\": \"กลิ่นมุก\",\n      \"quantity\": 2,\n      \"unitPrice\": 250,\n      \"totalPrice\": 500\n    },\n    {\n      \"description\": \"ไล่ตาเหล็ก\",\n      \"quantity\": 1,\n      \"unitPrice\": 300,\n      \"totalPrice\": 300\n    }\n  ],\n  \"imageURL\": \"https://example.com/image.jpg\",\n  \"customerName\": \"สมชาย\",\n  \"customerEmail\": \"somchai@email.com\",\n  \"notes\": \"ใบเสร็จทดสอบ\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/receipts",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Get All Receipts (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/receipts",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Get Receipts by User (GET with filter)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/receipts?userId=user123&status=pending",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "user123"
+                },
+                {
+                  "key": "status",
+                  "value": "pending"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "4. Get Receipt by ID (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/receipts/{{receipt_id}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts",
+                "{{receipt_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Update Receipt - Approve (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"customerName\": \"สมชาย\",\n  \"customerEmail\": \"somchai@email.com\",\n  \"notes\": \"ได้รับการตรวจสอบและอนุมัติแล้ว\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/receipts/{{receipt_id}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts",
+                "{{receipt_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "6. Update Receipt - Reject (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\",\n  \"notes\": \"ข้อมูลไม่ครบถ้วน กรุณาส่งใหม่\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/receipts/{{receipt_id}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts",
+                "{{receipt_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "7. Get Summary (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/receipts/summary",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "8. Get Summary by User (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/receipts/summary?userId=user123",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "user123"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "9. Delete Receipt (DELETE)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/receipts/{{receipt_id}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "receipts",
+                "{{receipt_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "receipt_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
