@@ -351,15 +351,11 @@ async function processLineEvent(
  */
 export async function POST(request: NextRequest) {
   try {
-    // Step 0: Connect to MongoDB at the start
-    console.log('🔗 Connecting to MongoDB...');
-    await connectToDatabase();
-    console.log('✅ MongoDB connection established');
-
     // Get signature from header
     const signature = request.headers.get('x-line-signature');
 
     if (!signature) {
+      console.error('❌ Missing X-Line-Signature header');
       return NextResponse.json(
         { error: 'Missing X-Line-Signature header' },
         { status: 400 }
@@ -368,18 +364,36 @@ export async function POST(request: NextRequest) {
 
     // Get raw body
     const body = await request.text();
+    console.log('📨 Received webhook body length:', body.length);
 
     // Verify signature
     if (!verifyLineSignature(body, signature)) {
-      console.error('❌ Invalid LINE signature');
+      console.error('❌ Invalid LINE signature. Secret:', process.env.LINE_CHANNEL_SECRET ? 'Set' : 'Not set');
       return NextResponse.json(
         { error: 'Invalid signature' },
         { status: 403 }
       );
     }
 
+    console.log('✅ Signature verified');
+
+    // Handle empty body (verification request from LINE)
+    if (!body || body.trim() === '') {
+      console.log('✅ Empty body received - LINE verification request accepted');
+      return NextResponse.json(
+        { success: true, message: 'Webhook verified' },
+        { status: 200 }
+      );
+    }
+
+    // Step 0: Connect to MongoDB at the start
+    console.log('🔗 Connecting to MongoDB...');
+    await connectToDatabase();
+    console.log('✅ MongoDB connection established');
+
     // Parse events
-    const events = JSON.parse(body).events as line.WebhookEvent[];
+    const parsedData = JSON.parse(body);
+    const events = (parsedData.events || []) as line.WebhookEvent[];
 
     console.log(`📥 Received ${events.length} event(s) from LINE`);
 
