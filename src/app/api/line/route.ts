@@ -386,13 +386,14 @@ export async function POST(request: NextRequest) {
       console.warn('⚠️ Signature mismatch!');
       console.warn('   Calculated:', hash);
       console.warn('   Expected:', signature);
+      console.warn('   Secret length:', channelSecret.length);
+      console.warn('   Body length:', body.length);
       
-      // For debugging: log but don't fail silently
-      // In production, you may want to return 401
-      // For now, we'll allow it to proceed to help with testing
+      // For debugging: allow it through temporarily
+      // Later we can require proper verification
+    } else {
+      console.log('✅ Signature valid');
     }
-
-    console.log('✅ Signature verification passed');
 
     // Step 6: Handle empty body or verification request
     if (!body || body.trim() === '') {
