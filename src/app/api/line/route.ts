@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
 import { google } from 'googleapis';
 import crypto from 'crypto';
+import connectToDatabase from '@/lib/mongodb';
+import Receipt from '@/models/Receipt';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -19,15 +22,16 @@ const drive = google.drive({
       private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       client_id: process.env.GOOGLE_CLIENT_ID,
-      auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-      token_uri: 'https://oauth2.googleapis.com/token',
-      auth_provider_x509_cert_url:
-        'https://www.googleapis.com/oauth2/v1/certs',
-      client_x509_cert_url: process.env.GOOGLE_CERT_URL,
-    },
+      auth_url: 'https://accounts.google.com/o/oauth2/auth',
+      token_url: 'https://oauth2.googleapis.com/token',
+    } as any,
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   }),
 });
+
+// Initialize Google Generative AI (Gemini)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 /**
  * Verify LINE Webhook Signature
@@ -120,11 +124,10 @@ async function uploadToGoogleDrive(
 
     console.log('File uploaded successfully:', {
       fileId,
-      fileName,
-      publicLink,
+      webViewLink: response.data.webViewLink,
     });
 
-    return publicLink;
+    return response.data.webViewLink || publicLink;
   } catch (error) {
     console.error('Error uploading to Google Drive:', error);
     throw new Error('Failed to upload to Google Drive');
@@ -144,6 +147,76 @@ async function sendLineReply(
   } catch (error) {
     console.error('Error sending reply to LINE:', error);
     throw new Error('Failed to send reply to LINE');
+  }
+}
+
+/**
+ * Extract Thai bank slip data using Gemini
+ */
+async function extractSlipDataWithGemini(
+  imageBuffer: Buffer
+): Promise<{
+  amount: number;
+  sender: string;
+  receiver: string;
+  date: string;
+}> {
+  try {
+    console.log('🤖 Sending image to Gemini for analysis...');
+
+    // Convert buffer to base64
+    const base64Image = imageBuffer.toString('base64');
+
+    // Send to Gemini with specific prompt for Thai bank slip
+    const result = await geminiModel.generateContent([
+      {
+        inlineData: {
+          data: base64Image,
+          mimeType: 'image/jpeg',
+        },
+      },
+      {
+        text: `Please extract the following information from this Thai bank slip image (ใบเสร็จ):
+        
+1. Amount (จำนวนเงิน) - in Thai Baht
+2. Sender (ผู้ส่ง) - the name of the person/organization sending
+3. Receiver (ผู้รับ) - the name of the person/organization receiving
+4. Date (วันที่) - in Thai date format if available, otherwise any date you can find
+
+Please respond in JSON format only, like this:
+{
+  "amount": 1500.50,
+  "sender": "Name of Sender",
+  "receiver": "Name of Receiver",
+  "date": "25/3/2567 or 2026-03-25"
+}
+
+If you cannot extract any field, use null or 0 for that value.`,
+      },
+    ]);
+
+    const responseText = result.response.text();
+    console.log('🤖 Gemini response:', responseText);
+
+    // Parse JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from Gemini response');
+    }
+
+    const extractedData = JSON.parse(jsonMatch[0]);
+
+    console.log('✅ Data extracted from slip:', extractedData);
+
+    return {
+      amount: extractedData.amount || 0,
+      sender: extractedData.sender || 'Unknown',
+      receiver: extractedData.receiver || 'Unknown',
+      date: extractedData.date || new Date().toISOString().split('T')[0],
+    };
+  } catch (error) {
+    console.error('❌ Error extracting data with Gemini:', error);
+    throw new Error('Failed to extract slip data from image');
   }
 }
 
@@ -174,57 +247,99 @@ async function processLineEvent(
     return;
   }
 
+  let receiptId: string | null = null;
+  let extractedAmount: number = 0;
+  let extractedSender: string = '';
+  let extractedReceiver: string = '';
+  let extractedDate: string = '';
+
   try {
-    console.log('Processing image message:', event.message.id);
+    console.log('🔄 Processing image message:', event.message.id);
 
-    // Step 1: Get image from LINE
+    // Step 1: Connect to MongoDB
+    await connectToDatabase();
+    console.log('💾 MongoDB connected');
+
+    // Step 2: Get image from LINE
     const imageBuffer = await getImageFromLine(event.message.id);
-    console.log('Image retrieved from LINE, size:', imageBuffer.length, 'bytes');
+    console.log('📥 Image retrieved from LINE, size:', imageBuffer.length, 'bytes');
 
-    // Step 2: Generate filename with timestamp
+    // Step 3: Extract data from image using Gemini
+    const slipData = await extractSlipDataWithGemini(imageBuffer);
+    extractedAmount = slipData.amount;
+    extractedSender = slipData.sender;
+    extractedReceiver = slipData.receiver;
+    extractedDate = slipData.date;
+    console.log('💰 Extracted slip data:', slipData);
+
+    // Step 4: Generate filename with timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `receipt-${timestamp}.jpg`;
+    const fileName = `receipt-${extractedAmount}-${timestamp}.jpg`;
 
-    // Step 3: Upload to Google Drive
-    const publicLink = await uploadToGoogleDrive(imageBuffer, fileName, 'image/jpeg');
+    // Step 5: Upload to Google Drive
+    const webViewLink = await uploadToGoogleDrive(imageBuffer, fileName, 'image/jpeg');
+    console.log('☁️ File uploaded to Google Drive');
 
-    // Step 4: Send reply to LINE with the public link
+    // Step 6: Save to MongoDB with extracted data
+    const transactionId = `LINE-${event.source.userId}-${Date.now()}`;
+    const receiptNumber = `RCP-${Date.now()}`;
+
+    const newReceipt = await Receipt.create({
+      transactionId,
+      receiptNumber,
+      storeName: extractedReceiver || 'LINE Upload',
+      amount: extractedAmount,
+      currency: 'THB',
+      status: 'reviewing',
+      userId: event.source.userId,
+      imageURL: webViewLink,
+      customerName: extractedSender,
+      issueDate: new Date(extractedDate),
+      notes: `Uploaded via LINE by ${event.source.userId} | Sender: ${extractedSender}`,
+    });
+
+    receiptId = newReceipt._id.toString();
+    console.log('📋 Receipt saved to MongoDB:', receiptId);
+
+    // Step 7: Send success reply to LINE with extracted amount
+    const amountText = extractedAmount > 0 ? `฿${extractedAmount.toFixed(2)}` : 'ไม่สามารถอ่านจำนวนเงิน';
+    
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: '✅ Image uploaded successfully to Google Drive!',
+        text: `✅ อัพโหลดสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${extractedSender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${extractedReceiver || 'ไม่ทราบ'}\n📅 วันที่: ${extractedDate}`,
       },
       {
         type: 'template',
-        altText: 'Image uploaded',
+        altText: 'receipt-uploaded',
         template: {
           type: 'buttons',
-          text: 'Your receipt image has been uploaded.',
+          text: 'ใบเสร็จได้รับการบันทึกแล้ว',
           actions: [
             {
               type: 'uri',
-              label: '📂 View on Google Drive',
-              uri: publicLink,
+              label: '📂 ดูที่ Google Drive',
+              uri: webViewLink,
             },
             {
               type: 'postback',
-              label: '⬇️ Download Link',
-              data: `action=download&url=${encodeURIComponent(publicLink)}`,
+              label: '📋 ดูรายละเอียด',
+              data: `action=view_receipt&id=${receiptId}`,
             },
           ],
         },
       },
     ]);
 
-    console.log('Image processing completed successfully');
-  } catch (error) {
-    console.error('Error processing image event:', error);
+    console.log('✨ Image processing completed successfully with Gemini extraction');
+  } catch (error: any) {
+    console.error('❌ Error processing image event:', error);
 
     // Send error message to LINE user
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: '❌ Sorry, there was an error processing your image. Please try again later.',
+        text: '❌ ขออภัย เกิดข้อผิดพลาดในการประมวลผลรูปภาพ\n\nError: ' + error.message,
       },
     ]);
   }
@@ -236,6 +351,11 @@ async function processLineEvent(
  */
 export async function POST(request: NextRequest) {
   try {
+    // Step 0: Connect to MongoDB at the start
+    console.log('🔗 Connecting to MongoDB...');
+    await connectToDatabase();
+    console.log('✅ MongoDB connection established');
+
     // Get signature from header
     const signature = request.headers.get('x-line-signature');
 
@@ -251,7 +371,7 @@ export async function POST(request: NextRequest) {
 
     // Verify signature
     if (!verifyLineSignature(body, signature)) {
-      console.error('Invalid LINE signature');
+      console.error('❌ Invalid LINE signature');
       return NextResponse.json(
         { error: 'Invalid signature' },
         { status: 403 }
@@ -261,14 +381,14 @@ export async function POST(request: NextRequest) {
     // Parse events
     const events = JSON.parse(body).events as line.WebhookEvent[];
 
-    console.log(`Received ${events.length} event(s) from LINE`);
+    console.log(`📥 Received ${events.length} event(s) from LINE`);
 
     // Process each event
     for (const event of events) {
       try {
         await processLineEvent(event);
       } catch (error) {
-        console.error('Error processing individual event:', error);
+        console.error('❌ Error processing individual event:', error);
         // Continue processing other events
       }
     }
@@ -283,14 +403,27 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error: any) {
-    console.error('Error in LINE webhook handler:', error);
+    console.error('❌ Error in LINE webhook handler:', error);
+
+    // Check for specific errors
+    let errorMessage = error.message || 'Internal server error';
+    let statusCode = 500;
+
+    if (error.name === 'MongooseError') {
+      errorMessage = 'Database connection failed';
+      statusCode = 500;
+    } else if (error.message?.includes('Database')) {
+      errorMessage = 'Database operation failed';
+      statusCode = 500;
+    }
 
     return NextResponse.json(
       {
-        error: 'Internal server error',
-        message: error.message,
+        success: false,
+        error: 'Processing failed',
+        message: errorMessage,
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }
