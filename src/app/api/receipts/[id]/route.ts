@@ -3,24 +3,18 @@ import { Types } from 'mongoose';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
-
 /**
  * GET /api/receipts/[id]
  * Fetch a single receipt by ID
  */
 export async function GET(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    const { id } = await params;
 
     // Validate MongoDB ObjectId
     if (!Types.ObjectId.isValid(id)) {
@@ -74,12 +68,12 @@ export async function GET(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    const { id } = await params;
 
     // Validate MongoDB ObjectId
     if (!Types.ObjectId.isValid(id)) {
@@ -199,12 +193,12 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    const { id } = await params;
 
     // Validate MongoDB ObjectId
     if (!Types.ObjectId.isValid(id)) {
