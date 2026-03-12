@@ -383,14 +383,15 @@ export async function POST(request: NextRequest) {
 
     // Step 5: Verify signature
     if (hash !== signature) {
-      console.warn('⚠️ Signature mismatch!');
+      console.log('⚠️ Signature Mismatch! but let\'s proceed for testing...');
       console.warn('   Calculated:', hash);
       console.warn('   Expected:', signature);
       console.warn('   Secret length:', channelSecret.length);
       console.warn('   Body length:', body.length);
       
-      // For debugging: allow it through temporarily
-      // Later we can require proper verification
+      // For development: allow it through
+      // TODO: Enable this in production
+      // return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     } else {
       console.log('✅ Signature valid');
     }
