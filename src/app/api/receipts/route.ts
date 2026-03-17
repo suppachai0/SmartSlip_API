@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import { validateApiKey, unauthorizedResponse } from '@/lib/auth';
+import { checkRateLimit, rateLimitExceededResponse, addRateLimitHeaders } from '@/lib/rateLimit';
 
 /**
  * POST /api/receipts
  * Create a new receipt from n8n or external service
+ * 
+ * SECURITY: Requires API key (add VALID_API_KEYS env var with comma-separated keys)
+ * RATE LIMIT: Configurable via RATE_LIMIT_REQUESTS and RATE_LIMIT_WINDOW_MS
  * 
  * Expected request body:
  * {
@@ -17,13 +22,27 @@ import Receipt from '@/models/Receipt';
  *   customerEmail?: string (optional)
  *   notes?: string (optional)
  * }
+ * 
+ * Headers:
+ * - x-api-key: Your API key (or use ?api_key=key in query string)
  */
 export async function POST(request: NextRequest) {
   try {
-    // Step 1: Connect to database
+    // Step 1: Validate API Key
+    if (!validateApiKey(request)) {
+      return unauthorizedResponse('Missing or invalid API key');
+    }
+
+    // Step 2: Check Rate Limit
+    const rateLimitResult = checkRateLimit(request);
+    if (!rateLimitResult.allowed) {
+      return rateLimitExceededResponse(rateLimitResult.resetTime);
+    }
+
+    // Step 3: Connect to database
     await connectToDatabase();
 
-    // Step 2: Parse request body with error handling
+    // Step 4: Parse request body with error handling
     let body;
     try {
       body = await request.json();
@@ -45,7 +64,7 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    // Step 3: Validate required fields
+    // Step 5: Validate required fields
     if (!storeName || typeof storeName !== 'string' || storeName.trim() === '') {
       return NextResponse.json(
         { error: 'storeName is required and must be a non-empty string' },
@@ -74,11 +93,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 4: Generate transaction ID and receipt number
+    // Step 6: Generate transaction ID and receipt number
     const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const receiptNumber = `RCP-${Date.now()}`;
 
-    // Step 5: Create receipt object
+    // Step 7: Create receipt object
     const receiptData = {
       transactionId,
       receiptNumber,
@@ -95,11 +114,11 @@ export async function POST(request: NextRequest) {
       issueDate: new Date(),
     };
 
-    // Step 6: Save to MongoDB
+    // Step 8: Save to MongoDB
     const receipt = await Receipt.create(receiptData);
 
-    // Step 7: Return success response
-    return NextResponse.json(
+    // Step 9: Return success response
+    let response = NextResponse.json(
       {
         success: true,
         message: 'Receipt created successfully',
@@ -115,6 +134,15 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 }
     );
+
+    // Add rate limit headers
+    response = addRateLimitHeaders(
+      response,
+      rateLimitResult.remaining,
+      rateLimitResult.resetTime
+    );
+
+    return response;
   } catch (error: any) {
     console.error('Error creating receipt:', error);
 
@@ -152,31 +180,52 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/receipts
- * Fetch all receipts or filter by userId (if provided)
+ * Fetch all receipts or filter by userId
+ * 
+ * SECURITY: Requires API key
+ * RATE LIMIT: Configurable via environment variables
  * 
  * Query params:
- * ?userId=string (optional)
- * ?status=pending|reviewing|completed|failed (optional)
+ * - userId: Filter by user (optional)
+ * - status: Filter by status (optional)
+ * - api_key: API key (alternative to header)
+ * 
+ * Headers:
+ * - x-api-key: Your API key
  */
 export async function GET(request: NextRequest) {
   try {
+    // Step 1: Validate API Key
+    if (!validateApiKey(request)) {
+      return unauthorizedResponse('Missing or invalid API key');
+    }
+
+    // Step 2: Check Rate Limit
+    const rateLimitResult = checkRateLimit(request);
+    if (!rateLimitResult.allowed) {
+      return rateLimitExceededResponse(rateLimitResult.resetTime);
+    }
+
+    // Step 3: Connect to database
     await connectToDatabase();
 
+    // Step 4: Parse query parameters
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
     const status = searchParams.get('status');
 
-    // Build query filter
+    // Step 5: Build query filter
     const filter: any = {};
     if (userId) filter.userId = userId;
     if (status) filter.status = status;
 
-    // Fetch receipts
+    // Step 6: Fetch receipts
     const receipts = await Receipt.find(filter)
       .sort({ createdAt: -1 })
       .limit(100);
 
-    return NextResponse.json(
+    // Step 7: Return response with rate limit headers
+    let response = NextResponse.json(
       {
         success: true,
         data: receipts,
@@ -184,6 +233,14 @@ export async function GET(request: NextRequest) {
       },
       { status: 200 }
     );
+
+    response = addRateLimitHeaders(
+      response,
+      rateLimitResult.remaining,
+      rateLimitResult.resetTime
+    );
+
+    return response;
   } catch (error: any) {
     console.error('Error fetching receipts:', error);
     return NextResponse.json(
