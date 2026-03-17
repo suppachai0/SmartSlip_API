@@ -478,3 +478,14 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+/**
+ * GET /api/line
+ * Health check for webhook endpoint
+ */
+export async function GET() {
+  return NextResponse.json(
+    { message: 'LINE Webhook endpoint is active and ready to receive messages' },
+    { status: 200 }
+  );
+}
