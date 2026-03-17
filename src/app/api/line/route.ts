@@ -350,8 +350,60 @@ async function processLineEvent(
  * Handle LINE Messaging API webhook
  */
 export async function POST(request: NextRequest) {
-  console.log('✅ Webhook POST received - returning 200');
-  return NextResponse.json({ ok: true }, { status: 200 });
+  try {
+    const body = await request.text();
+    console.log('📨 LINE webhook received, body length:', body.length);
+
+    // Handle empty body (verification)
+    if (!body || body.trim() === '') {
+      console.log('✅ Empty body - verification request');
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
+    // Parse events
+    let data;
+    try {
+      data = JSON.parse(body);
+    } catch (e) {
+      console.error('Failed to parse body:', e);
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
+    const events = data.events || [];
+    console.log(`📥 Received ${events.length} event(s)`);
+
+    // Process events asynchronously (don't block response)
+    (async () => {
+      try {
+        await connectToDatabase();
+        console.log('✅ MongoDB connected for async processing');
+
+        for (const event of events) {
+          try {
+            console.log('Processing event:', event.type);
+            await processLineEvent(event);
+          } catch (error) {
+            console.error('❌ Error processing event:', error);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Async processing error:', error);
+      }
+    })();
+
+    // Return 200 immediately to acknowledge webhook
+    return NextResponse.json(
+      { success: true, message: 'Webhook received' },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error('❌ Error in webhook:', error);
+    // Always return 200
+    return NextResponse.json(
+      { success: true },
+      { status: 200 }
+    );
+  }
 }
 
 /**
