@@ -23,8 +23,17 @@ export async function POST(request: NextRequest) {
     // Step 1: Connect to database
     await connectToDatabase();
 
-    // Step 2: Parse request body
-    const body = await request.json();
+    // Step 2: Parse request body with error handling
+    let body;
+    try {
+      body = await request.json();
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body' },
+        { status: 400 }
+      );
+    }
+
     const {
       storeName,
       totalAmount,
@@ -37,23 +46,30 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Step 3: Validate required fields
-    if (!storeName) {
+    if (!storeName || typeof storeName !== 'string' || storeName.trim() === '') {
       return NextResponse.json(
-        { error: 'storeName is required' },
+        { error: 'storeName is required and must be a non-empty string' },
         { status: 400 }
       );
     }
 
-    if (!totalAmount && totalAmount !== 0) {
+    if (totalAmount === undefined || totalAmount === null) {
       return NextResponse.json(
         { error: 'totalAmount is required' },
         { status: 400 }
       );
     }
 
-    if (!userId) {
+    if (typeof totalAmount !== 'number' || totalAmount < 0) {
       return NextResponse.json(
-        { error: 'userId is required' },
+        { error: 'totalAmount must be a non-negative number' },
+        { status: 400 }
+      );
+    }
+
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      return NextResponse.json(
+        { error: 'userId is required and must be a non-empty string' },
         { status: 400 }
       );
     }
@@ -66,15 +82,15 @@ export async function POST(request: NextRequest) {
     const receiptData = {
       transactionId,
       receiptNumber,
-      storeName,
+      storeName: storeName.trim(),
       amount: totalAmount,
-      currency: 'USD',
-      status: 'pending', // Default status
-      userId,
+      currency: 'THB',
+      status: 'pending',
+      userId: userId.trim(),
       imageURL,
       customerName,
       customerEmail,
-      items,
+      items: Array.isArray(items) ? items : [],
       notes,
       issueDate: new Date(),
     };
