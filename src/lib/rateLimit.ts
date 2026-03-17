@@ -111,11 +111,11 @@ export function rateLimitExceededResponse(
 /**
  * Add rate limit headers to response
  */
-export function addRateLimitHeaders(
-  response: NextResponse,
+export function addRateLimitHeaders<T>(
+  response: NextResponse<T>,
   remaining: number,
   resetTime: number
-): NextResponse {
+): NextResponse<T> {
   response.headers.set('X-RateLimit-Remaining', remaining.toString());
   response.headers.set('X-RateLimit-Reset', new Date(resetTime).toISOString());
   return response;
