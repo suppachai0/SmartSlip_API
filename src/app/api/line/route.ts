@@ -361,16 +361,16 @@ export async function POST(request: NextRequest) {
           })();
         });
 
-        // Wait for all events to process (or timeout after 4 seconds)
+        // Wait for all events to process (or timeout after 5 seconds)
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Processing timeout')), 4000)
+          setTimeout(() => reject(new Error('Processing timeout')), 5000)
         );
 
         try {
           await Promise.race([Promise.all(processPromises), timeoutPromise]);
           console.log('\n✨ [SUCCESS] All events processed before response\n');
         } catch (timeoutError) {
-          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 4s, returning response anyway');
+          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 5s, returning response anyway');
           console.warn('   Events are still processing in the background...\n');
         }
       } catch (error: any) {
