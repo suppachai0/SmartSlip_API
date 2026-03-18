@@ -370,7 +370,7 @@ export async function POST(request: NextRequest) {
           await Promise.race([Promise.all(processPromises), timeoutPromise]);
           console.log('\n✨ [SUCCESS] All events processed before response\n');
         } catch (timeoutError) {
-          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 2.5s, returning response anyway');
+          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 4s, returning response anyway');
           console.warn('   Events are still processing in the background...\n');
         }
       } catch (error: any) {
