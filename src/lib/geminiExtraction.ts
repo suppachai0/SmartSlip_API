@@ -123,7 +123,7 @@ export async function extractSlipDataWithGeminiFallback(
         {
           maxAttempts: 1,
           initialDelayMs: 0,
-          timeoutMs: 3500, // 3.5 second timeout per attempt (aggressive)
+          timeoutMs: 4500, // 4.5 second timeout per attempt (allow more time for Gemini)
           onRetry: (attempt, error) => {
             console.warn(`⚠️ Gemini API retry ${attempt}: ${error?.message}`);
           },
