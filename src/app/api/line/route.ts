@@ -361,9 +361,9 @@ export async function POST(request: NextRequest) {
           })();
         });
 
-        // Wait for all events to process (or timeout after 2.5 seconds)
+        // Wait for all events to process (or timeout after 4 seconds)
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Processing timeout')), 2500)
+          setTimeout(() => reject(new Error('Processing timeout')), 4000)
         );
 
         try {
