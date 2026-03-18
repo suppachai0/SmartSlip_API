@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
         // Process each event
         console.log(`\n📊 Processing ${events.length} event(s) synchronously...`);
         
-        const processPromises = events.map((event, i) => {
+        const processPromises = events.map((event: line.WebhookEvent, i: number) => {
           return (async () => {
             try {
               console.log(`\n📌 [EVENT ${i + 1}/${events.length}] Type: ${event.type}`);
