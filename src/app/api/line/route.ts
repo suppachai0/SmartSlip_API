@@ -12,6 +12,28 @@ const lineClient = new line.Client({
 });
 
 /**
+ * Diagnostic: Check environment and service health
+ */
+function checkEnvironmentHealth(): {
+  status: 'healthy' | 'warning' | 'error';
+  checks: Record<string, boolean | string>;
+} {
+  const checks: Record<string, boolean | string> = {
+    LINE_CHANNEL_ACCESS_TOKEN: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    LINE_CHANNEL_SECRET: !!process.env.LINE_CHANNEL_SECRET,
+    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+    MONGODB_URI: !!process.env.MONGODB_URI,
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    GOOGLE_DRIVE_FOLDER_ID: !!process.env.GOOGLE_DRIVE_FOLDER_ID,
+  };
+
+  const allHealthy = Object.values(checks).every((v) => v === true);
+  const status = allHealthy ? 'healthy' : 'error';
+
+  return { status, checks };
+}
+
+/**
  * Verify LINE Webhook Signature
  * Compares HMAC-SHA256 signature from LINE header with calculated hash
  */
@@ -217,22 +239,31 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   } catch (error: any) {
     console.error('\n❌ [ERROR] Image processing failed:', error);
     console.error('Error details:', error.message);
+    console.error('Stack:', error.stack);
 
     try {
       // Send error message to LINE user with helpful info
-      const errorMsg =
-        error.message?.includes('timeout') || error.message?.includes('too large')
-          ? '⏱️ ภาพขนาดใหญ่เกินไป กรุณาลองใหม่กับภาพที่เล็กกว่า'
-          : '❌ มีข้อผิดพลาดในการประมวลผลรูปภาพ';
+      let errorMsg = '❌ มีข้อผิดพลาดในการประมวลผลรูปภาพ';
+      
+      if (error.message?.includes('timeout')) {
+        errorMsg = '⏱️ ภาพขนาดใหญ่เกินไป กรุณาลองใหม่กับภาพที่เล็กกว่า';
+      } else if (error.message?.includes('MongoDB')) {
+        errorMsg = '🗄️ Database connection error - ลองใหม่ในอีกสักครู่';
+      } else if (error.message?.includes('Gemini')) {
+        errorMsg = '🤖 AI service error - ลองใหม่ในอีกสักครู่';
+      } else if (error.message?.includes('Google Drive')) {
+        errorMsg = '☁️ Drive upload error - ลองใหม่ในอีกสักครู่';
+      }
 
       await sendLineReply(event.replyToken, [
         {
           type: 'text',
-          text: `${errorMsg}\n\n📝 ข้อมูล: ${error.message}`,
+          text: `${errorMsg}\n\n📝 Error: ${error.message || 'Unknown error'}`,
         },
       ]);
     } catch (replyError) {
       console.error('⚠️ Could not send error message to LINE:', replyError);
+      console.error('Reply error details:', (replyError as any).message);
     }
   }
 }
@@ -249,6 +280,18 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     console.log('\n\n🔔 ========== LINE WEBHOOK RECEIVED ==========');
     console.log(`📨 Request size: ${body.length} bytes`);
+    console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
+
+    // Log environment health
+    const health = checkEnvironmentHealth();
+    console.log(`🏥 Environment Health: ${health.status}`);
+    if (health.status !== 'healthy') {
+      console.warn('⚠️ Missing environment variables:', 
+        Object.entries(health.checks)
+          .filter(([_, v]) => !v)
+          .map(([k]) => k)
+      );
+    }
 
     // Handle empty body
     if (!body || body.trim() === '') {
@@ -260,7 +303,6 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('x-line-signature');
     if (!signature) {
       console.warn('⚠️ No X-Line-Signature header found');
-      // Don't block processing - might be test request
     } else {
       console.log('🔐 Verifying LINE signature...');
       if (!verifyLineSignature(body, signature)) {
@@ -275,7 +317,7 @@ export async function POST(request: NextRequest) {
     try {
       data = JSON.parse(body);
     } catch (e) {
-      console.error('❌ Failed to parse JSON body');
+      console.error('❌ Failed to parse JSON body:', e);
       return NextResponse.json(
         { error: 'Invalid JSON' },
         { status: 400 }
@@ -292,6 +334,7 @@ export async function POST(request: NextRequest) {
         console.log('🔄 Starting async event processing...');
         try {
           await connectToDatabase();
+          console.log('✅ MongoDB connected in background task');
 
           for (let i = 0; i < events.length; i++) {
             const event = events[i];
@@ -306,6 +349,7 @@ export async function POST(request: NextRequest) {
           console.log('✅ Async event processing completed\n');
         } catch (error) {
           console.error('❌ Async processing error:', error);
+          console.error('MongoDB connection failed - events not processed');
         }
       })().catch(err => {
         console.error('⚠️ Unhandled async error:', err);
@@ -322,6 +366,8 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: any) {
     console.error('❌ Fatal webhook error:', error);
+    console.error('Error details:', error.message);
+    console.error('Stack:', error.stack);
     // Always return 200 to LINE
     return NextResponse.json({ ok: true }, { status: 200 });
   }
@@ -329,21 +375,35 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/line
- * Health check for webhook endpoint
+ * Health check and diagnostic endpoint
  */
 export async function GET() {
+  const health = checkEnvironmentHealth();
+  const config = {
+    node_env: process.env.NODE_ENV,
+    line_bot_id: process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'configured' : 'MISSING',
+    gemini_key: process.env.GEMINI_API_KEY ? 'configured' : 'MISSING',
+    mongodb_uri: process.env.MONGODB_URI ? 'configured' : 'MISSING',
+    google_drive: process.env.GOOGLE_DRIVE_FOLDER_ID ? 'configured' : 'MISSING',
+  };
+
   return NextResponse.json(
     {
-      status: 'active',
-      message: 'LINE Webhook is ready to receive messages',
+      status: health.status === 'healthy' ? 'healthy' : 'warning',
+      timestamp: new Date().toISOString(),
+      message: 'LINE Webhook endpoint status',
       features: [
         '✅ Image OCR extraction with Gemini',
         '✅ Google Drive upload with retry',
         '✅ MongoDB storage',
         '✅ Rate limiting ready',
         '✅ Enhanced error handling',
+        '✅ Diagnostic logging',
       ],
+      environment_checks: health.checks,
+      configuration: config,
+      webhook_url: `POST /api/line`,
     },
-    { status: 200 }
+    { status: health.status === 'healthy' ? 200 : 503 }
   );
 }
