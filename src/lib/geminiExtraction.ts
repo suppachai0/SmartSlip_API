@@ -7,6 +7,7 @@ import { retryWithBackoff } from './retry';
  */
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 export interface SlipExtractionResult {
   amount: number;
@@ -107,7 +108,6 @@ export async function extractSlipDataWithGeminiFallback(
 
       const result = await retryWithBackoff(
         async () => {
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
           return await model.generateContent([
             {
               inlineData: {
@@ -121,9 +121,9 @@ export async function extractSlipDataWithGeminiFallback(
           ]);
         },
         {
-          maxAttempts: 3,
-          initialDelayMs: 1000,
-          timeoutMs: 20000, // 20 second timeout per attempt
+          maxAttempts: 1,
+          initialDelayMs: 0,
+          timeoutMs: 3500, // 3.5 second timeout per attempt (aggressive)
           onRetry: (attempt, error) => {
             console.warn(`⚠️ Gemini API retry ${attempt}: ${error?.message}`);
           },
@@ -146,12 +146,20 @@ export async function extractSlipDataWithGeminiFallback(
         // Validate extraction quality
         const confidence = evaluateExtractionQuality(extractedData, methodName);
 
-        // If standard method succeeded with high confidence, return early
-        if (methodName === 'gemini_standard' && confidence === 'high') {
+        // Return immediately on any success (don't wait for high confidence)
+        // This helps us finish within the 5s window
+        if (confidence !== 'low') {
+          console.log(`✅ Extraction successful (${confidence} confidence, ${methodName})`);
           return formatResult(extractedData, confidence, methodName);
         }
 
-        // For other methods, return with appropriate confidence
+        // For low confidence on first attempt, try next prompt
+        if (methodName === 'gemini_standard') {
+          console.warn('⚠️ Low confidence on gemini_standard, trying next prompt...');
+          continue;
+        }
+
+        // For other methods, return with low confidence
         return formatResult(extractedData, confidence, methodName);
       } catch (parseError) {
         console.warn('⚠️ Failed to parse JSON from response, trying next prompt...');
