@@ -327,33 +327,56 @@ export async function POST(request: NextRequest) {
     const events = data.events || [];
     console.log(`📥 Events to process: ${events.length}`);
 
-    // Process events asynchronously (don't block response to LINE)
-    // LINE requires 200 response within 3 seconds
+    // CRITICAL FIX: Vercel terminates function immediately after response
+    // We must process events BEFORE returning 200 to ensure work completes
+    // LINE allows 3 seconds - that's our window to at least start processing
     if (events.length > 0) {
-      (async () => {
-        console.log('🔄 Starting async event processing...');
-        try {
-          await connectToDatabase();
-          console.log('✅ MongoDB connected in background task');
+      try {
+        console.log('\n💚 [SYNC PROCESSING STARTING] Processing before response...');
+        console.log(`⏱️ Task started at: ${Date.now()}`);
+        
+        // Connect to MongoDB FIRST before returning
+        console.log('📍 [STEP 0] Connecting to MongoDB...');
+        await connectToDatabase();
+        console.log('✅ [STEP 0] MongoDB connected BEFORE response sent');
 
-          for (let i = 0; i < events.length; i++) {
-            const event = events[i];
+        // Process each event
+        console.log(`\n📊 Processing ${events.length} event(s) synchronously...`);
+        
+        const processPromises = events.map((event, i) => {
+          return (async () => {
             try {
-              console.log(`\n📌 Event ${i + 1}/${events.length}: ${event.type}`);
+              console.log(`\n📌 [EVENT ${i + 1}/${events.length}] Type: ${event.type}`);
+              const startTime = Date.now();
+              
               await processLineEvent(event);
-            } catch (error) {
-              console.error(`❌ Error processing event ${i + 1}:`, error);
+              
+              const duration = Date.now() - startTime;
+              console.log(`   ✅ Event ${i + 1} completed in ${duration}ms`);
+            } catch (error: any) {
+              console.error(`\n❌ [EVENT ${i + 1}] Processing failed:`);
+              console.error(`   Error: ${error?.message}`);
+              console.error(`   Type: ${error?.constructor?.name}`);
             }
-          }
+          })();
+        });
 
-          console.log('✅ Async event processing completed\n');
-        } catch (error) {
-          console.error('❌ Async processing error:', error);
-          console.error('MongoDB connection failed - events not processed');
+        // Wait for all events to process (or timeout after 2.5 seconds)
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Processing timeout')), 2500)
+        );
+
+        try {
+          await Promise.race([Promise.all(processPromises), timeoutPromise]);
+          console.log('\n✨ [SUCCESS] All events processed before response\n');
+        } catch (timeoutError) {
+          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 2.5s, returning response anyway');
+          console.warn('   Events are still processing in the background...\n');
         }
-      })().catch(err => {
-        console.error('⚠️ Unhandled async error:', err);
-      });
+      } catch (error: any) {
+        console.error('❌ [ERROR] Sync processing failed:', error?.message);
+        console.error('   Stack:', error?.stack?.split('\n').slice(0, 3).join('\n'));
+      }
     }
 
     // Return 200 immediately to acknowledge webhook to LINE
@@ -361,7 +384,7 @@ export async function POST(request: NextRequest) {
     console.log('🔔 =========================================\n');
 
     return NextResponse.json(
-      { success: true, message: 'Webhook received and queued for processing' },
+      { success: true, message: 'Webhook received and processing' },
       { status: 200 }
     );
   } catch (error: any) {
