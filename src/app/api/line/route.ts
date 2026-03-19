@@ -360,17 +360,17 @@ export async function POST(request: NextRequest) {
           })();
         });
 
-        // Wait for all events to process (or timeout after 8 seconds)
-        // Tesseract needs time to load models on first run (cold start)
+        // Wait for all events to process (or timeout after 15 seconds)
+        // Gemini API + image download can be slow on first runs
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Processing timeout')), 8000)
+          setTimeout(() => reject(new Error('Processing timeout')), 15000)
         );
 
         try {
           await Promise.race([Promise.all(processPromises), timeoutPromise]);
           console.log('\n✨ [SUCCESS] All events processed before response\n');
         } catch (timeoutError) {
-          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 8s, returning response anyway');
+          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 15s, returning response anyway');
           console.warn('   Events are still processing in the background...\n');
         }
       } catch (error: any) {
