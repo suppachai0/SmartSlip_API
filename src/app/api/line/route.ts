@@ -3,7 +3,7 @@ import * as line from '@line/bot-sdk';
 import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
-import { extractSlipDataWithTesseract } from '@/lib/tesseractExtraction';
+import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
 
 // Initialize LINE client
@@ -147,7 +147,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
 
     // Step 3: Extract data from image using Tesseract OCR
     console.log('🤖 Step 3: Extracting data with Tesseract OCR...');
-    const slipData = await extractSlipDataWithTesseract(imageBuffer);
+    const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
     console.log('✅ Step 3: Data extracted');
     console.log(`   - Amount: ฿${slipData.amount}`);
     console.log(`   - Sender: ${slipData.sender}`);
