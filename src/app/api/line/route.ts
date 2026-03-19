@@ -3,7 +3,7 @@ import * as line from '@line/bot-sdk';
 import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
-import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
+import { extractSlipDataWithTesseract } from '@/lib/tesseractExtraction';
 import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
 
 // Initialize LINE client
@@ -21,7 +21,6 @@ function checkEnvironmentHealth(): {
   const checks: Record<string, boolean | string> = {
     LINE_CHANNEL_ACCESS_TOKEN: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
     LINE_CHANNEL_SECRET: !!process.env.LINE_CHANNEL_SECRET,
-    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
     MONGODB_URI: !!process.env.MONGODB_URI,
     GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     GOOGLE_DRIVE_FOLDER_ID: !!process.env.GOOGLE_DRIVE_FOLDER_ID,
@@ -146,9 +145,9 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     const fileSizeMB = (imageBuffer.length / 1024 / 1024).toFixed(2);
     console.log(`✅ Step 2: Image downloaded (${fileSizeMB}MB)`);
 
-    // Step 3: Extract data from image using enhanced Gemini
-    console.log('🤖 Step 3: Extracting data with Gemini...');
-    const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
+    // Step 3: Extract data from image using Tesseract OCR
+    console.log('🤖 Step 3: Extracting data with Tesseract OCR...');
+    const slipData = await extractSlipDataWithTesseract(imageBuffer);
     console.log('✅ Step 3: Data extracted');
     console.log(`   - Amount: ฿${slipData.amount}`);
     console.log(`   - Sender: ${slipData.sender}`);
@@ -361,16 +360,17 @@ export async function POST(request: NextRequest) {
           })();
         });
 
-        // Wait for all events to process (or timeout after 5 seconds)
+        // Wait for all events to process (or timeout after 8 seconds)
+        // Tesseract needs time to load models on first run (cold start)
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Processing timeout')), 5000)
+          setTimeout(() => reject(new Error('Processing timeout')), 8000)
         );
 
         try {
           await Promise.race([Promise.all(processPromises), timeoutPromise]);
           console.log('\n✨ [SUCCESS] All events processed before response\n');
         } catch (timeoutError) {
-          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 5s, returning response anyway');
+          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 8s, returning response anyway');
           console.warn('   Events are still processing in the background...\n');
         }
       } catch (error: any) {
