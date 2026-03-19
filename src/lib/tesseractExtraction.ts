@@ -28,7 +28,7 @@ export async function extractSlipDataWithTesseract(
     // Run OCR
     const result = await Tesseract.recognize(
       imageDataUrl,
-      ['tha', 'eng'], // Thai + English languages
+      'tha+eng', // Thai + English languages
       {
         logger: (m: any) => {
           if (m.status === 'recognizing text') {
