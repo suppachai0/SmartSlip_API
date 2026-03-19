@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
-import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
+// import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive'; // DISABLED FOR NOW
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -122,7 +122,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: '📸 ขอโทษด้วย! กรุณาส่งรูปภาพใบเสร็จ\n\n📤 ฉันจะทำการ:\n1. อัตราแลกเปลี่ยน OCR ด้วย Gemini AI\n2. บันทึกลงใน Google Drive\n3. เก็บข้อมูลในฐานข้อมูล',
+        text: '📸 ขอโทษด้วย! กรุณาส่งรูปภาพใบเสร็จ\n\n📤 ฉันจะทำการ:\n1. อัตราแลกเปลี่ยน OCR ด้วย Gemini AI\n2. วิเคราะห์ข้อมูลและส่งกลับมา\n3. เก็บข้อมูลในฐานข้อมูล',
       },
     ]);
 
@@ -156,19 +156,17 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     console.log(`   - Confidence: ${slipData.confidence}`);
     console.log(`   - Method: ${slipData.method}`);
 
-    // Step 4: Upload image to Google Drive with retry
-    console.log('☁️ Step 4: Uploading to Google Drive with retry...');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
-
-    const driveResult = await uploadToGoogleDriveWithRetry(
-      imageBuffer,
-      fileName,
-      'image/jpeg'
-    );
-    console.log('✅ Step 4: Uploaded to Google Drive');
-    console.log(`   - File ID: ${driveResult.fileId}`);
-    console.log(`   - Link: ${driveResult.publicLink}`);
+    // Step 4: Upload image to Google Drive with retry (DISABLED FOR NOW)
+    console.log('☁️ Step 4: Google Drive upload disabled (will be re-enabled later)');
+    // const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    // const fileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
+    // const driveResult = await uploadToGoogleDriveWithRetry(
+    //   imageBuffer,
+    //   fileName,
+    //   'image/jpeg'
+    // );
+    const driveResult = { fileId: 'DISABLED', publicLink: 'DISABLED' };
+    console.log('✅ Step 4: Google Drive upload skipped');
 
     // Step 5: Save receipt to MongoDB
     console.log('💾 Step 5: Saving to MongoDB...');
