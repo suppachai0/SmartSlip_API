@@ -46,9 +46,7 @@ export async function uploadToCloudStorage(
       },
     });
 
-    // Make file public
-    await file.makePublic();
-
+    // Generate public URL (no need to makePublic when uniform bucket-level access is enabled)
     const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
 
     console.log('✅ File uploaded to Cloud Storage');
