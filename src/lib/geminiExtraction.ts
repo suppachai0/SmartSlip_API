@@ -56,9 +56,9 @@ Return ONLY valid JSON:
         ]);
       },
       {
-        maxAttempts: 1,
-        initialDelayMs: 0,
-        timeoutMs: 3500, // Gemini API timeout
+        maxAttempts: 2,
+        initialDelayMs: 500,
+        timeoutMs: 6000, // Gemini API timeout - increased from 3500ms
         onRetry: (attempt, error) => {
           console.warn(`⚠️ Retry ${attempt}: ${error?.message}`);
         },
