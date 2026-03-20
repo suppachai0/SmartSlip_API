@@ -253,19 +253,22 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
 
     console.log('✅ Initial reply sent to user');
 
-    // 🔄 BACKGROUND PROCESSING (fire-and-forget)
-    // User gets initial reply immediately, this runs in the background
+    // 🔄 BACKGROUND PROCESSING (wait for completion)
+    // Must complete before returning to avoid Vercel function termination
     const userId = event.source.userId;
     if (!userId) {
       console.error('❌ User ID is missing from webhook event');
       return;
     }
 
-    processReceiptInBackground(userId, messageId, imageBuffer).catch((err) => {
-      console.error('❌ Uncaught background error:', err);
-    });
+    console.log('🔄 Background processing starting...');
+    try {
+      await processReceiptInBackground(userId, messageId, imageBuffer);
+      console.log('🔄 Background processing completed successfully\n');
+    } catch (bgError) {
+      console.error('❌ Uncaught background error:', bgError);
+    }
 
-    console.log('🔄 Background processing started (async)\n');
     return;
   } catch (error: any) {
     console.error('\n❌ [ERROR] Download/reply failed:', error);
