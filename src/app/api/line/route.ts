@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
-import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive'; // RE-ENABLED: Upload to root Drive
+import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -104,6 +104,107 @@ async function sendLineReply(
 }
 
 /**
+ * BACKGROUND FUNCTION: Process receipt asynchronously
+ * Runs AFTER returning 200 to LINE
+ */
+async function processReceiptInBackground(
+  userId: string,
+  messageId: string,
+  imageBuffer: Buffer
+): Promise<void> {
+  try {
+    console.log(`\n🔄 [BACKGROUND] Starting async receipt processing for user ${userId}`);
+
+    // Step 1: Connect to MongoDB
+    await connectToDatabase();
+
+    // Step 2: Extract data with Gemini
+    console.log('🤖 [BG] Extracting data with Gemini...');
+    const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
+    console.log('✅ [BG] Extraction complete:', {
+      amount: slipData.amount,
+      sender: slipData.sender,
+      receiver: slipData.receiver,
+    });
+
+    // Step 3: Upload to Cloud Storage
+    console.log('☁️ [BG] Uploading to Cloud Storage...');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
+    const storageResult = await uploadToCloudStorage(imageBuffer, fileName, 'image/jpeg');
+    console.log('✅ [BG] Cloud Storage upload complete:', storageResult.publicUrl);
+
+    // Step 4: Save to MongoDB
+    console.log('💾 [BG] Saving to MongoDB...');
+    const transactionId = `LINE-${userId}-${Date.now()}`;
+    const receiptNumber = `RCP-${Date.now()}`;
+
+    const newReceipt = await Receipt.create({
+      transactionId,
+      receiptNumber,
+      storeName: slipData.receiver || 'LINE Upload',
+      amount: slipData.amount,
+      currency: 'THB',
+      status: slipData.confidence === 'high' ? 'approved' : 'pending',
+      userId,
+      imageURL: storageResult.publicUrl,
+      customerName: slipData.sender,
+      extractedAmount: slipData.amount,
+      extractedSender: slipData.sender,
+      extractedReceiver: slipData.receiver,
+      issueDate: new Date(slipData.date),
+      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}`,
+    });
+
+    const receiptId = newReceipt._id.toString();
+    console.log('✅ [BG] MongoDB save complete:', receiptId);
+
+    // Step 5: Send detailed result via pushMessage
+    console.log('📤 [BG] Sending detailed result via pushMessage...');
+    const amountText =
+      slipData.amount > 0 ? `฿${slipData.amount.toFixed(2)}` : 'ไม่สามารถอ่านจำนวนเงิน';
+    const confidenceEmoji = {
+      high: '✅',
+      medium: '⚠️',
+      low: '❓',
+    }[slipData.confidence];
+
+    await lineClient.pushMessage(userId, {
+      type: 'text',
+      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}`,
+    });
+
+    console.log('✅ [BG] DetailedResult sent via pushMessage');
+    console.log(`\n✨ [BACKGROUND COMPLETE] Receipt ID: ${receiptId}\n`);
+  } catch (error: any) {
+    console.error('\n❌ [BACKGROUND ERROR] Receipt processing failed:', error);
+    console.error('Error details:', error.message);
+
+    try {
+      // Send error notification via pushMessage
+      let errorMsg = '❌ มีข้อผิดพลาดในการประมวลผล';
+      
+      if (error.message?.includes('timeout')) {
+        errorMsg = '⏱️ ภาพขนาดใหญ่เกินไป กรุณาลองใหม่กับภาพที่เล็กกว่า';
+      } else if (error.message?.includes('MongoDB')) {
+        errorMsg = '🗄️ ข้อผิดพลาดฐานข้อมูล ลองใหม่ในอีกสักครู่';
+      } else if (error.message?.includes('Gemini')) {
+        errorMsg = '🤖 ข้อผิดพลาด AI - ลองใหม่ในอีกสักครู่';
+      } else if (error.message?.includes('Cloud Storage')) {
+        errorMsg = '☁️ ข้อผิดพลาด Upload - ลองใหม่ในอีกสักครู่';
+      }
+
+      await lineClient.pushMessage(userId, {
+        type: 'text',
+        text: `${errorMsg}\n\n📝 ${error.message || 'Unknown error'}`,
+      });
+    } catch (pushError) {
+      console.error('⚠️ Could not send error via pushMessage:', pushError);
+    }
+  }
+}
+
+/**
  * Process LINE webhook events
  * Handles image messages with OCR extraction and storage
  */
@@ -130,136 +231,54 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   }
 
   const messageId = (event.message as any).id;
-  let receiptId: string | null = null;
 
   try {
-    console.log(`\n🔄 [START] Processing image message: ${messageId}`);
+    console.log(`\n📥 [WEBHOOK] Received image message: ${messageId}`);
     console.log(`👤 User ID: ${event.source.userId}`);
 
-    // Step 1: Connect to MongoDB
-    await connectToDatabase();
-    console.log('✅ Step 1: MongoDB connected');
-
-    // Step 2: Download image from LINE
+    // Pre-download image while showing loading message
     const imageBuffer = await getImageFromLine(messageId);
     const fileSizeMB = (imageBuffer.length / 1024 / 1024).toFixed(2);
-    console.log(`✅ Step 2: Image downloaded (${fileSizeMB}MB)`);
+    console.log(`✅ Image downloaded (${fileSizeMB}MB)`);
 
-    // Step 3: Extract data from image using Tesseract OCR
-    console.log('🤖 Step 3: Extracting data with Tesseract OCR...');
-    const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
-    console.log('✅ Step 3: Data extracted');
-    console.log(`   - Amount: ฿${slipData.amount}`);
-    console.log(`   - Sender: ${slipData.sender}`);
-    console.log(`   - Receiver: ${slipData.receiver}`);
-    console.log(`   - Date: ${slipData.date}`);
-    console.log(`   - Confidence: ${slipData.confidence}`);
-    console.log(`   - Method: ${slipData.method}`);
-
-    // Step 4: Upload image to Google Drive with retry (ROOT DRIVE)
-    console.log('☁️ Step 4: Uploading to Google Drive (Root)...');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
-    const driveResult = await uploadToGoogleDriveWithRetry(
-      imageBuffer,
-      fileName,
-      'image/jpeg'
-    );
-    console.log('✅ Step 4: Image uploaded to Google Drive');
-
-    // Step 5: Save receipt to MongoDB
-    console.log('💾 Step 5: Saving to MongoDB...');
-    const transactionId = `LINE-${event.source.userId}-${Date.now()}`;
-    const receiptNumber = `RCP-${Date.now()}`;
-
-    const newReceipt = await Receipt.create({
-      transactionId,
-      receiptNumber,
-      storeName: slipData.receiver || 'LINE Upload',
-      amount: slipData.amount,
-      currency: 'THB',
-      status: slipData.confidence === 'high' ? 'reviewing' : 'pending',
-      userId: event.source.userId,
-      imageURL: driveResult.publicLink,
-      customerName: slipData.sender,
-      extractedAmount: slipData.amount,
-      extractedSender: slipData.sender,
-      extractedReceiver: slipData.receiver,
-      issueDate: new Date(slipData.date),
-      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | Size: ${fileSizeMB}MB | DriveID: ${driveResult.fileId}`,
-    });
-
-    receiptId = newReceipt._id.toString();
-    console.log('✅ Step 5: Receipt saved to MongoDB');
-    console.log(`   - Receipt ID: ${receiptId}`);
-
-    // Step 6: Send success reply to LINE
-    console.log('📤 Step 6: Sending success message to LINE...');
-    const amountText =
-      slipData.amount > 0 ? `฿${slipData.amount.toFixed(2)}` : 'ไม่สามารถอ่านจำนวนเงิน';
-    const confidenceEmoji = {
-      high: '✅',
-      medium: '⚠️',
-      low: '❓',
-    }[slipData.confidence];
-
+    // ⚡ INSTANT REPLY: Tell user we're processing
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: `${confidenceEmoji} อัพโหลดสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n\n${confidenceEmoji} ความแม่นยำ: ${slipData.confidence}`,
-      },
-      {
-        type: 'template',
-        altText: 'receipt-uploaded',
-        template: {
-          type: 'buttons' as any,
-          text: 'ใบเสร็จได้รับการบันทึกแล้ว',
-          actions: [
-            {
-              type: 'uri',
-              label: '📂 ดูที่ Google Drive',
-              uri: driveResult.publicLink,
-            },
-            {
-              type: 'postback',
-              label: '📋 ดูรายละเอียด',
-              data: `action=view_receipt&id=${receiptId}`,
-            },
-          ],
-        } as any,
+        text: '✅ ได้รับรูปแล้ว!\n\n⏳ กำลังประมวลผล...\n\n📊 OCR ด้วย AI\n☁️ Upload Cloud Storage\n💾 บันทึกข้อมูล',
       },
     ]);
 
-    console.log('✅ Step 6: Reply sent successfully');
-    console.log(`\n✨ [COMPLETE] Image processing succeeded\n`);
+    console.log('✅ Initial reply sent to user');
+
+    // 🔄 BACKGROUND PROCESSING (fire-and-forget)
+    // User gets initial reply immediately, this runs in the background
+    processReceiptInBackground(event.source.userId, messageId, imageBuffer).catch((err) => {
+      console.error('❌ Uncaught background error:', err);
+    });
+
+    console.log('🔄 Background processing started (async)\n');
+    return;
   } catch (error: any) {
-    console.error('\n❌ [ERROR] Image processing failed:', error);
-    console.error('Error details:', error.message);
-    console.error('Stack:', error.stack);
+    console.error('\n❌ [ERROR] Download/reply failed:', error);
 
     try {
-      // Send error message to LINE user with helpful info
-      let errorMsg = '❌ มีข้อผิดพลาดในการประมวลผลรูปภาพ';
+      let errorMsg = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
       
-      if (error.message?.includes('timeout')) {
-        errorMsg = '⏱️ ภาพขนาดใหญ่เกินไป กรุณาลองใหม่กับภาพที่เล็กกว่า';
-      } else if (error.message?.includes('MongoDB')) {
-        errorMsg = '🗄️ Database connection error - ลองใหม่ในอีกสักครู่';
-      } else if (error.message?.includes('Gemini')) {
-        errorMsg = '🤖 AI service error - ลองใหม่ในอีกสักครู่';
-      } else if (error.message?.includes('Google Drive')) {
-        errorMsg = '☁️ Drive upload error - ลองใหม่ในอีกสักครู่';
+      if (error.message?.includes('Image')) {
+        errorMsg = '📸 ไม่สามารถดาวน์โหลดรูป ลองส่งใหม่';
+      } else if (error.message?.includes('reply')) {
+        errorMsg = '📤 ไม่สามารถส่ง reply ลองใหม่';
       }
 
       await sendLineReply(event.replyToken, [
         {
           type: 'text',
-          text: `${errorMsg}\n\n📝 Error: ${error.message || 'Unknown error'}`,
+          text: `${errorMsg}\n\n📝 ${error.message || 'Unknown error'}`,
         },
       ]);
-    } catch (replyError) {
-      console.error('⚠️ Could not send error message to LINE:', replyError);
-      console.error('Reply error details:', (replyError as any).message);
+    } catch (fallbackError) {
+      console.error('⚠️ Could not send error message:', fallbackError);
     }
   }
 }
@@ -268,8 +287,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
  * POST /api/line
  * Handle LINE Messaging API webhook
  * 
- * Receives webhook events from LINE platform
- * Processes image messages with retry logic and error handling
+ * Non-blocking webhook handler with background processing
  */
 export async function POST(request: NextRequest) {
   try {
