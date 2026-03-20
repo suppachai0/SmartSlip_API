@@ -15,7 +15,7 @@ const storage = new Storage({
   } as any,
 });
 
-const bucketName = 'smartslip-receipts';
+const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET_NAME || 'smartslip-receipts-bucket';
 
 export interface CloudStorageUploadResult {
   publicUrl: string;

@@ -23,7 +23,9 @@ function checkEnvironmentHealth(): {
     LINE_CHANNEL_SECRET: !!process.env.LINE_CHANNEL_SECRET,
     MONGODB_URI: !!process.env.MONGODB_URI,
     GOOGLE_SERVICE_ACCOUNT_EMAIL: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    GOOGLE_DRIVE_FOLDER_ID: !!process.env.GOOGLE_DRIVE_FOLDER_ID,
+    GOOGLE_PROJECT_ID: !!process.env.GOOGLE_PROJECT_ID,
+    GOOGLE_PRIVATE_KEY: !!process.env.GOOGLE_PRIVATE_KEY,
+    GOOGLE_CLOUD_STORAGE_BUCKET_NAME: !!process.env.GOOGLE_CLOUD_STORAGE_BUCKET_NAME,
   };
 
   const allHealthy = Object.values(checks).every((v) => v === true);
@@ -253,7 +255,13 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
 
     // 🔄 BACKGROUND PROCESSING (fire-and-forget)
     // User gets initial reply immediately, this runs in the background
-    processReceiptInBackground(event.source.userId, messageId, imageBuffer).catch((err) => {
+    const userId = event.source.userId;
+    if (!userId) {
+      console.error('❌ User ID is missing from webhook event');
+      return;
+    }
+
+    processReceiptInBackground(userId, messageId, imageBuffer).catch((err) => {
       console.error('❌ Uncaught background error:', err);
     });
 
