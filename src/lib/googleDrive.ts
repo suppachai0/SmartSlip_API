@@ -71,13 +71,7 @@ export async function uploadToGoogleDriveWithRetry(
   fileName: string,
   mimeType: string = 'image/jpeg'
 ): Promise<GoogleDriveUploadResult> {
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
-  if (!folderId) {
-    throw new Error('GOOGLE_DRIVE_FOLDER_ID not configured');
-  }
-
-  console.log(`📤 Uploading to Google Drive: ${fileName} (${fileBuffer.length} bytes)`);
+  console.log(`📤 Uploading to Google Drive (Root): ${fileName} (${fileBuffer.length} bytes)`);
 
   // Check file size (Google Drive limit is 5TB per file, but consider API timeout)
   if (fileBuffer.length > 100 * 1024 * 1024) {
@@ -87,10 +81,9 @@ export async function uploadToGoogleDriveWithRetry(
   try {
     const result = await retryOnSpecificErrors(
       async () => {
-        // Create file metadata
+        // Create file metadata - uploading to root drive (no folder specified)
         const fileMetadata = {
           name: fileName,
-          parents: [folderId],
           mimeType,
         };
 

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
-// import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive'; // DISABLED FOR NOW
+import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive'; // RE-ENABLED: Upload to root Drive
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -156,17 +156,16 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     console.log(`   - Confidence: ${slipData.confidence}`);
     console.log(`   - Method: ${slipData.method}`);
 
-    // Step 4: Upload image to Google Drive with retry (DISABLED FOR NOW)
-    console.log('☁️ Step 4: Google Drive upload disabled (will be re-enabled later)');
-    // const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    // const fileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
-    // const driveResult = await uploadToGoogleDriveWithRetry(
-    //   imageBuffer,
-    //   fileName,
-    //   'image/jpeg'
-    // );
-    const driveResult = { fileId: 'DISABLED', publicLink: 'DISABLED' };
-    console.log('✅ Step 4: Google Drive upload skipped');
+    // Step 4: Upload image to Google Drive with retry (ROOT DRIVE)
+    console.log('☁️ Step 4: Uploading to Google Drive (Root)...');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
+    const driveResult = await uploadToGoogleDriveWithRetry(
+      imageBuffer,
+      fileName,
+      'image/jpeg'
+    );
+    console.log('✅ Step 4: Image uploaded to Google Drive');
 
     // Step 5: Save receipt to MongoDB
     console.log('💾 Step 5: Saving to MongoDB...');
