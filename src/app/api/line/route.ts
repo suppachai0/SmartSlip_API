@@ -405,17 +405,17 @@ export async function POST(request: NextRequest) {
           })();
         });
 
-        // Wait for all events to process (or timeout after 15 seconds)
-        // Gemini API + image download can be slow on first runs
+        // Wait for all events to process (or timeout after 25 seconds)
+        // Gemini API can take 10s + image download + other operations
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Processing timeout')), 15000)
+          setTimeout(() => reject(new Error('Processing timeout')), 25000)
         );
 
         try {
           await Promise.race([Promise.all(processPromises), timeoutPromise]);
           console.log('\n✨ [SUCCESS] All events processed before response\n');
         } catch (timeoutError) {
-          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 15s, returning response anyway');
+          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 25s, returning response anyway');
           console.warn('   Events are still processing in the background...\n');
         }
       } catch (error: any) {
