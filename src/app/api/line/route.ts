@@ -171,9 +171,18 @@ async function processReceiptInBackground(
       low: '❓',
     }[slipData.confidence];
 
+    // Format items list
+    let itemsText = '';
+    if (slipData.items && slipData.items.length > 0) {
+      itemsText = '\n\n🛒 สินค้า:\n';
+      slipData.items.forEach((item, index) => {
+        itemsText += `${index + 1}. ${item.description}\n   จำนวน: ${item.quantity} x ฿${item.unitPrice.toFixed(2)} = ฿${item.totalPrice.toFixed(2)}\n`;
+      });
+    }
+
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}`,
+      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}`,
     });
 
     console.log('✅ [BG] DetailedResult sent via pushMessage');

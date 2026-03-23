@@ -14,6 +14,12 @@ export interface SlipExtractionResult {
   sender: string;
   receiver: string;
   date: string;
+  items?: Array<{
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
   confidence: 'high' | 'medium' | 'low';
   method: 'gemini_standard' | 'gemini_aggressive' | 'fallback_text_only' | 'manual_required';
 }
@@ -35,9 +41,23 @@ export async function extractSlipDataWithGeminiFallback(
 2. Sender name 
 3. Receiver name
 4. Date (any format)
+5. Items list with: description, quantity (qty), unit price, total price
 
 Return ONLY valid JSON:
-{"amount": 0, "sender": "...", "receiver": "...", "date": "..."}`;
+{
+  "amount": 0,
+  "sender": "...",
+  "receiver": "...",
+  "date": "...",
+  "items": [
+    {
+      "description": "item name",
+      "quantity": 1,
+      "unitPrice": 0,
+      "totalPrice": 0
+    }
+  ]
+}`;
 
     console.log('📝 Calling Gemini API...');
 
@@ -85,6 +105,7 @@ Return ONLY valid JSON:
       sender: 'Unknown',
       receiver: 'Unknown',
       date: new Date().toISOString().split('T')[0],
+      items: undefined,
       confidence: 'low',
       method: 'manual_required',
     };
@@ -100,11 +121,22 @@ function formatResult(
   confidence: 'high' | 'medium' | 'low',
   method: string
 ): SlipExtractionResult {
+  // Format items list
+  const items = Array.isArray(data.items)
+    ? data.items.map((item: any) => ({
+        description: (item.description || 'Unknown').toString().substring(0, 100),
+        quantity: typeof item.quantity === 'number' ? Math.max(1, item.quantity) : 1,
+        unitPrice: typeof item.unitPrice === 'number' ? Math.max(0, item.unitPrice) : 0,
+        totalPrice: typeof item.totalPrice === 'number' ? Math.max(0, item.totalPrice) : 0,
+      }))
+    : undefined;
+
   return {
     amount: typeof data.amount === 'number' ? Math.max(0, data.amount) : 0,
     sender: (data.sender || 'Unknown').toString().substring(0, 100),
     receiver: (data.receiver || 'Unknown').toString().substring(0, 100),
     date: formatDate(data.date),
+    items: items && items.length > 0 ? items : undefined,
     confidence,
     method: method as any,
   };
