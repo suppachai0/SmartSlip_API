@@ -35,29 +35,23 @@ export async function extractSlipDataWithGeminiFallback(
   const base64Image = imageBuffer.toString('base64');
 
   try {
-    // Single fast prompt - just get the main data needed
-    const prompt = `Extract from this Thai bank slip (ใบเสร็จ):
-1. Amount in Baht (฿) - number only
-2. Sender name 
-3. Receiver name
-4. Date (any format)
-5. Items list with: description, quantity (qty), unit price, total price
+    // Simplified prompt for faster extraction
+    const prompt = `From this Thai receipt (ใบเสร็จ), extract ONLY these 4 fields:
+1. Total amount (number)
+2. Shop/receiver name
+3. Customer/sender name  
+4. All items: [name] qty=[number] price=[number]
 
-Return ONLY valid JSON:
+Return ONLY this exact JSON structure:
 {
   "amount": 0,
-  "sender": "...",
-  "receiver": "...",
-  "date": "...",
-  "items": [
-    {
-      "description": "item name",
-      "quantity": 1,
-      "unitPrice": 0,
-      "totalPrice": 0
-    }
-  ]
-}`;
+  "sender": "name",
+  "receiver": "name",
+  "date": "date",
+  "items": [{"description": "name", "quantity": 1, "unitPrice": 0, "totalPrice": 0}]
+}
+
+If you cannot read critical data, return null for that field.`;
 
     console.log('📝 Calling Gemini API...');
 
@@ -77,8 +71,8 @@ Return ONLY valid JSON:
       },
       {
         maxAttempts: 2,
-        initialDelayMs: 500,
-        timeoutMs: 6000, // Gemini API timeout - increased from 3500ms
+        initialDelayMs: 1000,
+        timeoutMs: 10000, // Gemini API timeout - increased to handle complex receipts
         onRetry: (attempt, error) => {
           console.warn(`⚠️ Retry ${attempt}: ${error?.message}`);
         },

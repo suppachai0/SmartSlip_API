@@ -129,6 +129,16 @@ async function processReceiptInBackground(
       receiver: slipData.receiver,
     });
 
+    // Check if extraction failed completely
+    if (slipData.method === 'manual_required' && slipData.amount === 0) {
+      console.error('❌ [BG] Extraction failed - image could not be processed');
+      await lineClient.pushMessage(userId, {
+        type: 'text',
+        text: '❌ ขออภัย ไม่สามารถอ่านใบเสร็จนี้ได้\n\n🔍 เหตุผลที่อาจเกิดขึ้น:\n• ภาพไม่ชัดหรือเอียง\n• ข้อความในใบเสร็จไม่ชัด\n• ประมวลผล AI ใช้เวลานาน\n\n💡 ลองใหม่:\n1. ถ่ายรูปที่ชัด และตรง\n2. ให้แสงสว่างเพียงพอ\n3. อย่างา้หนีการสะท้อนแสง',
+      });
+      return; // Stop processing, don't waste resources
+    }
+
     // Step 3: Upload to Cloud Storage
     console.log('☁️ [BG] Uploading to Cloud Storage...');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
