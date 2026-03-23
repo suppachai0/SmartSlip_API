@@ -237,3 +237,19 @@ export async function DELETE(
     );
   }
 }
+
+/**
+ * OPTIONS /api/receipts/[id]
+ * Handle CORS preflight requests
+ */
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, x-api-key, authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+}
