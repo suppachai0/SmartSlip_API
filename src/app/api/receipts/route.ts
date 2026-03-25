@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { validateApiKey, unauthorizedResponse } from '@/lib/auth';
 import { checkRateLimit, rateLimitExceededResponse, addRateLimitHeaders } from '@/lib/rateLimit';
+import { appendReceiptToSheet } from '@/lib/googleSheets';
 
 /**
  * POST /api/receipts
@@ -116,6 +117,24 @@ export async function POST(request: NextRequest) {
 
     // Step 8: Save to MongoDB
     const receipt = await Receipt.create(receiptData);
+
+    // Step 8.1: Append to Google Sheets (best-effort)
+    try {
+      await appendReceiptToSheet({
+        receiptId: receipt._id.toString(),
+        userId: receipt.userId,
+        storeName: receipt.storeName,
+        amount: receipt.amount,
+        issueDate: receipt.issueDate,
+        items: receipt.items,
+        imageURL: receipt.imageURL,
+        status: receipt.status,
+        confidence: 'manual',
+        timestamp: receipt.createdAt,
+      });
+    } catch (sheetError) {
+      console.error('⚠️ Failed to append receipt to Google Sheets:', sheetError);
+    }
 
     // Step 9: Return success response
     let response = NextResponse.json(

@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage';
+import { appendReceiptToSheet } from '@/lib/googleSheets';
 
 /**
  * POST /api/receipts/extract
@@ -148,6 +149,23 @@ export async function POST(request: NextRequest) {
 
     const receiptId = newReceipt._id.toString();
     console.log('✅ [EXTRACT API] MongoDB save complete:', receiptId);
+
+    try {
+      await appendReceiptToSheet({
+        receiptId,
+        userId,
+        storeName: newReceipt.storeName,
+        amount: newReceipt.amount,
+        issueDate: newReceipt.issueDate,
+        items: slipData.items,
+        imageURL: storageResult.publicUrl,
+        status: newReceipt.status,
+        confidence: slipData.confidence,
+        timestamp: newReceipt.createdAt,
+      });
+    } catch (sheetError) {
+      console.error('⚠️ [EXTRACT API] Failed to append receipt to Google Sheets:', sheetError);
+    }
 
     // Step 11: Return success response
     const response = NextResponse.json(

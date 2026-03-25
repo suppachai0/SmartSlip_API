@@ -5,6 +5,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
+import { appendReceiptToSheet } from '@/lib/googleSheets';
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -165,11 +166,29 @@ async function processReceiptInBackground(
       extractedSender: slipData.sender,
       extractedReceiver: slipData.receiver,
       issueDate: new Date(slipData.date),
+      items: slipData.items || [],
       notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}`,
     });
 
     const receiptId = newReceipt._id.toString();
     console.log('✅ [BG] MongoDB save complete:', receiptId);
+
+    try {
+      await appendReceiptToSheet({
+        receiptId,
+        userId,
+        storeName: newReceipt.storeName,
+        amount: newReceipt.amount,
+        issueDate: newReceipt.issueDate,
+        items: slipData.items,
+        imageURL: storageResult.publicUrl,
+        status: newReceipt.status,
+        confidence: slipData.confidence,
+        timestamp: newReceipt.createdAt,
+      });
+    } catch (sheetError) {
+      console.error('⚠️ [BG] Failed to append receipt to Google Sheets:', sheetError);
+    }
 
     // Step 5: Send detailed result via pushMessage
     console.log('📤 [BG] Sending detailed result via pushMessage...');
