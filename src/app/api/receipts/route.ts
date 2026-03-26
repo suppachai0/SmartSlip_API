@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       return corsResponse(
         { error: 'Invalid JSON in request body' },
-        400
+        400,
+        request
       );
     }
 
@@ -276,5 +277,5 @@ export async function GET(request: NextRequest) {
  */
 export async function OPTIONS(request: NextRequest) {
   const response = new NextResponse(null, { status: 200 });
-  return addCorsHeaders(response);
+  return addCorsHeaders(response, request);
 }

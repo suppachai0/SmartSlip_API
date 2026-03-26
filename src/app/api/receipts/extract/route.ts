@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
@@ -33,17 +33,18 @@ import { corsResponse, addCorsHeaders } from '@/lib/cors';
  */
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔔 [EXTRACT API] Upload receipt extraction request received');
+    console.log('๐”” [EXTRACT API] Upload receipt extraction request received');
 
     // Step 1: Parse multipart form data
     let formData;
     try {
       formData = await request.formData();
     } catch (error) {
-      console.error('❌ Failed to parse form data:', error);
+      console.error('โ Failed to parse form data:', error);
       return corsResponse(
         { error: 'Invalid form data. Please send multipart/form-data with image and userId.' },
-        400
+        400,
+        request
       );
     }
 
@@ -54,14 +55,16 @@ export async function POST(request: NextRequest) {
     if (!imageFile) {
       return corsResponse(
         { error: 'Missing required field: image' },
-        400
+        400,
+        request
       );
     }
 
     if (!userId) {
       return corsResponse(
         { error: 'Missing required field: userId' },
-        400
+        400,
+        request
       );
     }
 
@@ -69,7 +72,8 @@ export async function POST(request: NextRequest) {
     if (!imageFile.type.startsWith('image/')) {
       return corsResponse(
         { error: 'File must be an image (JPEG, PNG, WebP, etc.)' },
-        400
+        400,
+        request
       );
     }
 
@@ -78,11 +82,12 @@ export async function POST(request: NextRequest) {
     if (imageFile.size > MAX_FILE_SIZE) {
       return corsResponse(
         { error: `File size must be less than 20MB. Current: ${(imageFile.size / 1024 / 1024).toFixed(2)}MB` },
-        400
+        400,
+        request
       );
     }
 
-    console.log(`📥 [EXTRACT API] File received: ${imageFile.name} (${(imageFile.size / 1024).toFixed(2)}KB)`);
+    console.log(`๐“ฅ [EXTRACT API] File received: ${imageFile.name} (${(imageFile.size / 1024).toFixed(2)}KB)`);
 
     // Step 5: Convert file to buffer
     const arrayBuffer = await imageFile.arrayBuffer();
@@ -90,12 +95,12 @@ export async function POST(request: NextRequest) {
 
     // Step 6: Connect to MongoDB
     await connectToDatabase();
-    console.log('✅ [EXTRACT API] MongoDB connected');
+    console.log('โ… [EXTRACT API] MongoDB connected');
 
     // Step 7: Extract data with Gemini
-    console.log('🤖 [EXTRACT API] Starting Gemini extraction...');
+    console.log('๐ค– [EXTRACT API] Starting Gemini extraction...');
     const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
-    console.log('✅ [EXTRACT API] Gemini extraction complete:', {
+    console.log('โ… [EXTRACT API] Gemini extraction complete:', {
       amount: slipData.amount,
       sender: slipData.sender,
       receiver: slipData.receiver,
@@ -103,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     // Step 8: Check if extraction failed
     if (slipData.method === 'manual_required' && slipData.amount === 0) {
-      console.warn('⚠️ [EXTRACT API] Image could not be processed - returning limited response');
+      console.warn('โ ๏ธ [EXTRACT API] Image could not be processed - returning limited response');
       return corsResponse(
         {
           success: false,
@@ -114,19 +119,20 @@ export async function POST(request: NextRequest) {
             recommendation: 'Please ensure the receipt is clear, well-lit, and not tilted',
           },
         },
-        422 // 422 Unprocessable Entity
+        422,
+        request
       );
     }
 
     // Step 9: Upload to Cloud Storage
-    console.log('☁️ [EXTRACT API] Uploading to Cloud Storage...');
+    console.log('โ๏ธ [EXTRACT API] Uploading to Cloud Storage...');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
     const storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
-    console.log('✅ [EXTRACT API] Cloud Storage upload complete:', storageResult.publicUrl);
+    console.log('โ… [EXTRACT API] Cloud Storage upload complete:', storageResult.publicUrl);
 
     // Step 10: Save to MongoDB
-    console.log('💾 [EXTRACT API] Saving to MongoDB...');
+    console.log('๐’พ [EXTRACT API] Saving to MongoDB...');
     const transactionId = `WEB-${userId}-${Date.now()}`;
     const receiptNumber = `RCP-${Date.now()}`;
 
@@ -149,7 +155,7 @@ export async function POST(request: NextRequest) {
     });
 
     const receiptId = newReceipt._id.toString();
-    console.log('✅ [EXTRACT API] MongoDB save complete:', receiptId);
+    console.log('โ… [EXTRACT API] MongoDB save complete:', receiptId);
 
     try {
       await appendReceiptToSheet({
@@ -165,7 +171,7 @@ export async function POST(request: NextRequest) {
         timestamp: newReceipt.createdAt,
       });
     } catch (sheetError) {
-      console.error('⚠️ [EXTRACT API] Failed to append receipt to Google Sheets:', sheetError);
+      console.error('โ ๏ธ [EXTRACT API] Failed to append receipt to Google Sheets:', sheetError);
     }
 
     // Step 11: Return success response
@@ -186,13 +192,14 @@ export async function POST(request: NextRequest) {
           createdAt: newReceipt.createdAt,
         },
       },
-      201
+      201,
+      request
     );
 
-    console.log('✅ [EXTRACT API] Returning 201 Created');
+    console.log('โ… [EXTRACT API] Returning 201 Created');
     return response;
   } catch (error: any) {
-    console.error('❌ [EXTRACT API] Error:', error);
+    console.error('โ [EXTRACT API] Error:', error);
     console.error('   Message:', error?.message);
     console.error('   Code:', error?.code);
 
@@ -200,28 +207,32 @@ export async function POST(request: NextRequest) {
     if (error.name === 'ValidationError') {
       return corsResponse(
         { error: 'Validation error: ' + error.message },
-        400
+        400,
+        request
       );
     }
 
     if (error.message?.includes('timeout')) {
       return corsResponse(
         { error: 'Request timeout. Image might be too complex. Please try a simpler receipt.' },
-        504
+        504,
+        request
       );
     }
 
     if (error.message?.includes('Cloud Storage')) {
       return corsResponse(
         { error: 'Failed to upload file to storage. Please try again.' },
-        503
+        503,
+        request
       );
     }
 
     if (error.message?.includes('Gemini') || error.message?.includes('AI')) {
       return corsResponse(
         { error: 'AI processing failed. Please try again later.' },
-        503
+        503,
+        request
       );
     }
 
@@ -232,7 +243,8 @@ export async function POST(request: NextRequest) {
         message: process.env.NODE_ENV === 'development' ? error.message : undefined,
         code: error?.code,
       },
-      500
+      500,
+      request
     );
   }
 }
@@ -243,7 +255,7 @@ export async function POST(request: NextRequest) {
  */
 export async function OPTIONS(request: NextRequest) {
   const response = new NextResponse(null, { status: 200 });
-  return addCorsHeaders(response);
+  return addCorsHeaders(response, request);
 }
 
 /**

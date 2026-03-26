@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
 import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
@@ -42,7 +42,7 @@ function checkEnvironmentHealth(): {
  */
 function verifyLineSignature(body: string, signature: string): boolean {
   if (!process.env.LINE_CHANNEL_SECRET) {
-    console.error('❌ LINE_CHANNEL_SECRET not configured');
+    console.error('โ LINE_CHANNEL_SECRET not configured');
     return false;
   }
 
@@ -55,14 +55,14 @@ function verifyLineSignature(body: string, signature: string): boolean {
     const isValid = hash === signature;
     
     if (!isValid) {
-      console.warn('⚠️ Invalid LINE signature');
+      console.warn('โ ๏ธ Invalid LINE signature');
       console.warn('Expected:', signature);
       console.warn('Got:', hash);
     }
 
     return isValid;
   } catch (error) {
-    console.error('❌ Error verifying signature:', error);
+    console.error('โ Error verifying signature:', error);
     return false;
   }
 }
@@ -72,7 +72,7 @@ function verifyLineSignature(body: string, signature: string): boolean {
  */
 async function getImageFromLine(messageId: string): Promise<Buffer> {
   try {
-    console.log(`📥 Downloading image from LINE: ${messageId}`);
+    console.log(`๐“ฅ Downloading image from LINE: ${messageId}`);
     const response = await lineClient.getMessageContent(messageId);
     const chunks: Buffer[] = [];
 
@@ -82,10 +82,10 @@ async function getImageFromLine(messageId: string): Promise<Buffer> {
     }
 
     const buffer = Buffer.concat(chunks);
-    console.log(`✅ Image downloaded successfully: ${buffer.length} bytes`);
+    console.log(`โ… Image downloaded successfully: ${buffer.length} bytes`);
     return buffer;
   } catch (error) {
-    console.error('❌ Error getting image from LINE:', error);
+    console.error('โ Error getting image from LINE:', error);
     throw new Error('Failed to get image from LINE');
   }
 }
@@ -98,11 +98,11 @@ async function sendLineReply(
   messages: line.Message[]
 ): Promise<void> {
   try {
-    console.log('📤 Sending reply to LINE...');
+    console.log('๐“ค Sending reply to LINE...');
     await lineClient.replyMessage(replyToken, messages);
-    console.log('✅ Reply sent successfully to LINE');
+    console.log('โ… Reply sent successfully to LINE');
   } catch (error) {
-    console.error('❌ Error sending reply to LINE:', error);
+    console.error('โ Error sending reply to LINE:', error);
     throw new Error('Failed to send reply to LINE');
   }
 }
@@ -117,15 +117,15 @@ async function processReceiptInBackground(
   imageBuffer: Buffer
 ): Promise<void> {
   try {
-    console.log(`\n🔄 [BACKGROUND] Starting async receipt processing for user ${userId}`);
+    console.log(`\n๐” [BACKGROUND] Starting async receipt processing for user ${userId}`);
 
     // Step 1: Connect to MongoDB
     await connectToDatabase();
 
     // Step 2: Extract data with Gemini
-    console.log('🤖 [BG] Extracting data with Gemini...');
+    console.log('๐ค– [BG] Extracting data with Gemini...');
     const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
-    console.log('✅ [BG] Extraction complete:', {
+    console.log('โ… [BG] Extraction complete:', {
       amount: slipData.amount,
       sender: slipData.sender,
       receiver: slipData.receiver,
@@ -133,23 +133,23 @@ async function processReceiptInBackground(
 
     // Check if extraction failed completely
     if (slipData.method === 'manual_required' && slipData.amount === 0) {
-      console.error('❌ [BG] Extraction failed - image could not be processed');
+      console.error('โ [BG] Extraction failed - image could not be processed');
       await lineClient.pushMessage(userId, {
         type: 'text',
-        text: '❌ ขออภัย ไม่สามารถอ่านใบเสร็จนี้ได้\n\n🔍 เหตุผลที่อาจเกิดขึ้น:\n• ภาพไม่ชัดหรือเอียง\n• ข้อความในใบเสร็จไม่ชัด\n• ประมวลผล AI ใช้เวลานาน\n\n💡 ลองใหม่:\n1. ถ่ายรูปที่ชัด และตรง\n2. ให้แสงสว่างเพียงพอ\n3. หลีกเลี่ยงการสะท้อนแสง',
+        text: 'โ เธเธญเธญเธ เธฑเธข เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เธญเนเธฒเธเนเธเน€เธชเธฃเนเธเธเธตเนเนเธ”เน\n\n๐” เน€เธซเธ•เธธเธเธฅเธ—เธตเนเธญเธฒเธเน€เธเธดเธ”เธเธถเนเธ:\nโ€ข เธ เธฒเธเนเธกเนเธเธฑเธ”เธซเธฃเธทเธญเน€เธญเธตเธขเธ\nโ€ข เธเนเธญเธเธงเธฒเธกเนเธเนเธเน€เธชเธฃเนเธเนเธกเนเธเธฑเธ”\nโ€ข เธเธฃเธฐเธกเธงเธฅเธเธฅ AI เนเธเนเน€เธงเธฅเธฒเธเธฒเธ\n\n๐’ก เธฅเธญเธเนเธซเธกเน:\n1. เธ–เนเธฒเธขเธฃเธนเธเธ—เธตเนเธเธฑเธ” เนเธฅเธฐเธ•เธฃเธ\n2. เนเธซเนเนเธชเธเธชเธงเนเธฒเธเน€เธเธตเธขเธเธเธญ\n3. เธซเธฅเธตเธเน€เธฅเธตเนเธขเธเธเธฒเธฃเธชเธฐเธ—เนเธญเธเนเธชเธ',
       });
       return; // Stop processing, don't waste resources
     }
 
     // Step 3: Upload to Cloud Storage
-    console.log('☁️ [BG] Uploading to Cloud Storage...');
+    console.log('โ๏ธ [BG] Uploading to Cloud Storage...');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
     const storageResult = await uploadToCloudStorage(imageBuffer, fileName, 'image/jpeg');
-    console.log('✅ [BG] Cloud Storage upload complete:', storageResult.publicUrl);
+    console.log('โ… [BG] Cloud Storage upload complete:', storageResult.publicUrl);
 
     // Step 4: Save to MongoDB
-    console.log('💾 [BG] Saving to MongoDB...');
+    console.log('๐’พ [BG] Saving to MongoDB...');
     const transactionId = `LINE-${userId}-${Date.now()}`;
     const receiptNumber = `RCP-${Date.now()}`;
 
@@ -172,7 +172,7 @@ async function processReceiptInBackground(
     });
 
     const receiptId = newReceipt._id.toString();
-    console.log('✅ [BG] MongoDB save complete:', receiptId);
+    console.log('โ… [BG] MongoDB save complete:', receiptId);
 
     try {
       await appendReceiptToSheet({
@@ -188,59 +188,59 @@ async function processReceiptInBackground(
         timestamp: newReceipt.createdAt,
       });
     } catch (sheetError) {
-      console.error('⚠️ [BG] Failed to append receipt to Google Sheets:', sheetError);
+      console.error('โ ๏ธ [BG] Failed to append receipt to Google Sheets:', sheetError);
     }
 
     // Step 5: Send detailed result via pushMessage
-    console.log('📤 [BG] Sending detailed result via pushMessage...');
+    console.log('๐“ค [BG] Sending detailed result via pushMessage...');
     const amountText =
-      slipData.amount > 0 ? `฿${slipData.amount.toFixed(2)}` : 'ไม่สามารถอ่านจำนวนเงิน';
+      slipData.amount > 0 ? `เธฟ${slipData.amount.toFixed(2)}` : 'เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เธญเนเธฒเธเธเธณเธเธงเธเน€เธเธดเธ';
     const confidenceEmoji = {
-      high: '✅',
-      medium: '⚠️',
-      low: '❓',
+      high: 'โ…',
+      medium: 'โ ๏ธ',
+      low: 'โ“',
     }[slipData.confidence];
 
     // Format items list
     let itemsText = '';
     if (slipData.items && slipData.items.length > 0) {
-      itemsText = '\n\n🛒 สินค้า:\n';
+      itemsText = '\n\n๐’ เธชเธดเธเธเนเธฒ:\n';
       slipData.items.forEach((item, index) => {
-        itemsText += `${index + 1}. ${item.description}\n   จำนวน: ${item.quantity} x ฿${item.unitPrice.toFixed(2)} = ฿${item.totalPrice.toFixed(2)}\n`;
+        itemsText += `${index + 1}. ${item.description}\n   เธเธณเธเธงเธ: ${item.quantity} x เธฟ${item.unitPrice.toFixed(2)} = เธฟ${item.totalPrice.toFixed(2)}\n`;
       });
     }
 
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}`,
+      text: `${confidenceEmoji} เธเธฃเธฐเธกเธงเธฅเธเธฅเธชเธณเน€เธฃเนเธ!\n\n๐’ฐ เธเธณเธเธงเธเน€เธเธดเธ: ${amountText}\n๐‘ค เธเธนเนเธชเนเธ: ${slipData.sender || 'เนเธกเนเธ—เธฃเธฒเธ'}\n๐ข เธเธนเนเธฃเธฑเธ: ${slipData.receiver || 'เนเธกเนเธ—เธฃเธฒเธ'}\n๐“… เธงเธฑเธเธ—เธตเน: ${slipData.date}${itemsText}\n๐ฏ เธเธงเธฒเธกเนเธกเนเธเธขเธณ: ${confidenceEmoji} ${slipData.confidence}`,
     });
 
-    console.log('✅ [BG] DetailedResult sent via pushMessage');
-    console.log(`\n✨ [BACKGROUND COMPLETE] Receipt ID: ${receiptId}\n`);
+    console.log('โ… [BG] DetailedResult sent via pushMessage');
+    console.log(`\nโจ [BACKGROUND COMPLETE] Receipt ID: ${receiptId}\n`);
   } catch (error: any) {
-    console.error('\n❌ [BACKGROUND ERROR] Receipt processing failed:', error);
+    console.error('\nโ [BACKGROUND ERROR] Receipt processing failed:', error);
     console.error('Error details:', error.message);
 
     try {
       // Send error notification via pushMessage
-      let errorMsg = '❌ มีข้อผิดพลาดในการประมวลผล';
+      let errorMsg = 'โ เธกเธตเธเนเธญเธเธดเธ”เธเธฅเธฒเธ”เนเธเธเธฒเธฃเธเธฃเธฐเธกเธงเธฅเธเธฅ';
       
       if (error.message?.includes('timeout')) {
-        errorMsg = '⏱️ ภาพขนาดใหญ่เกินไป กรุณาลองใหม่กับภาพที่เล็กกว่า';
+        errorMsg = 'โฑ๏ธ เธ เธฒเธเธเธเธฒเธ”เนเธซเธเนเน€เธเธดเธเนเธ เธเธฃเธธเธ“เธฒเธฅเธญเธเนเธซเธกเนเธเธฑเธเธ เธฒเธเธ—เธตเนเน€เธฅเนเธเธเธงเนเธฒ';
       } else if (error.message?.includes('MongoDB')) {
-        errorMsg = '🗄️ ข้อผิดพลาดฐานข้อมูล ลองใหม่ในอีกสักครู่';
+        errorMsg = '๐—๏ธ เธเนเธญเธเธดเธ”เธเธฅเธฒเธ”เธเธฒเธเธเนเธญเธกเธนเธฅ เธฅเธญเธเนเธซเธกเนเนเธเธญเธตเธเธชเธฑเธเธเธฃเธนเน';
       } else if (error.message?.includes('Gemini')) {
-        errorMsg = '🤖 ข้อผิดพลาด AI - ลองใหม่ในอีกสักครู่';
+        errorMsg = '๐ค– เธเนเธญเธเธดเธ”เธเธฅเธฒเธ” AI - เธฅเธญเธเนเธซเธกเนเนเธเธญเธตเธเธชเธฑเธเธเธฃเธนเน';
       } else if (error.message?.includes('Cloud Storage')) {
-        errorMsg = '☁️ ข้อผิดพลาด Upload - ลองใหม่ในอีกสักครู่';
+        errorMsg = 'โ๏ธ เธเนเธญเธเธดเธ”เธเธฅเธฒเธ” Upload - เธฅเธญเธเนเธซเธกเนเนเธเธญเธตเธเธชเธฑเธเธเธฃเธนเน';
       }
 
       await lineClient.pushMessage(userId, {
         type: 'text',
-        text: `${errorMsg}\n\n📝 ${error.message || 'Unknown error'}`,
+        text: `${errorMsg}\n\n๐“ ${error.message || 'Unknown error'}`,
       });
     } catch (pushError) {
-      console.error('⚠️ Could not send error via pushMessage:', pushError);
+      console.error('โ ๏ธ Could not send error via pushMessage:', pushError);
     }
   }
 }
@@ -252,19 +252,19 @@ async function processReceiptInBackground(
 async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   // Only handle message events
   if (event.type !== 'message') {
-    console.log(`⏭️ Ignoring ${event.type} event`);
+    console.log(`โญ๏ธ Ignoring ${event.type} event`);
     return;
   }
 
   // Only handle image messages
   if (event.message.type !== 'image') {
-    console.log(`📝 Non-image message received: ${event.message.type}`);
+    console.log(`๐“ Non-image message received: ${event.message.type}`);
 
     // Send text reply for non-image messages
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: '📸 ขอโทษด้วย! กรุณาส่งรูปภาพใบเสร็จ\n\n📤 ฉันจะทำการ:\n1. อัตราแลกเปลี่ยน OCR ด้วย Gemini AI\n2. วิเคราะห์ข้อมูลและส่งกลับมา\n3. เก็บข้อมูลในฐานข้อมูล',
+        text: '๐“ธ เธเธญเนเธ—เธฉเธ”เนเธงเธข! เธเธฃเธธเธ“เธฒเธชเนเธเธฃเธนเธเธ เธฒเธเนเธเน€เธชเธฃเนเธ\n\n๐“ค เธเธฑเธเธเธฐเธ—เธณเธเธฒเธฃ:\n1. เธญเธฑเธ•เธฃเธฒเนเธฅเธเน€เธเธฅเธตเนเธขเธ OCR เธ”เนเธงเธข Gemini AI\n2. เธงเธดเน€เธเธฃเธฒเธฐเธซเนเธเนเธญเธกเธนเธฅเนเธฅเธฐเธชเนเธเธเธฅเธฑเธเธกเธฒ\n3. เน€เธเนเธเธเนเธญเธกเธนเธฅเนเธเธเธฒเธเธเนเธญเธกเธนเธฅ',
       },
     ]);
 
@@ -274,61 +274,61 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   const messageId = (event.message as any).id;
 
   try {
-    console.log(`\n📥 [WEBHOOK] Received image message: ${messageId}`);
-    console.log(`👤 User ID: ${event.source.userId}`);
+    console.log(`\n๐“ฅ [WEBHOOK] Received image message: ${messageId}`);
+    console.log(`๐‘ค User ID: ${event.source.userId}`);
 
     // Pre-download image while showing loading message
     const imageBuffer = await getImageFromLine(messageId);
     const fileSizeMB = (imageBuffer.length / 1024 / 1024).toFixed(2);
-    console.log(`✅ Image downloaded (${fileSizeMB}MB)`);
+    console.log(`โ… Image downloaded (${fileSizeMB}MB)`);
 
-    // ⚡ INSTANT REPLY: Tell user we're processing
+    // โก INSTANT REPLY: Tell user we're processing
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: '✅ ได้รับรูปแล้ว!\n\n⏳ กำลังประมวลผล...\n\n📊 OCR ด้วย AI\n☁️ Upload Cloud Storage\n💾 บันทึกข้อมูล',
+        text: 'โ… เนเธ”เนเธฃเธฑเธเธฃเธนเธเนเธฅเนเธง!\n\nโณ เธเธณเธฅเธฑเธเธเธฃเธฐเธกเธงเธฅเธเธฅ...\n\n๐“ OCR เธ”เนเธงเธข AI\nโ๏ธ Upload Cloud Storage\n๐’พ เธเธฑเธเธ—เธถเธเธเนเธญเธกเธนเธฅ',
       },
     ]);
 
-    console.log('✅ Initial reply sent to user');
+    console.log('โ… Initial reply sent to user');
 
-    // 🔄 BACKGROUND PROCESSING (wait for completion)
+    // ๐” BACKGROUND PROCESSING (wait for completion)
     // Must complete before returning to avoid Vercel function termination
     const userId = event.source.userId;
     if (!userId) {
-      console.error('❌ User ID is missing from webhook event');
+      console.error('โ User ID is missing from webhook event');
       return;
     }
 
-    console.log('🔄 Background processing starting...');
+    console.log('๐” Background processing starting...');
     try {
       await processReceiptInBackground(userId, messageId, imageBuffer);
-      console.log('🔄 Background processing completed successfully\n');
+      console.log('๐” Background processing completed successfully\n');
     } catch (bgError) {
-      console.error('❌ Uncaught background error:', bgError);
+      console.error('โ Uncaught background error:', bgError);
     }
 
     return;
   } catch (error: any) {
-    console.error('\n❌ [ERROR] Download/reply failed:', error);
+    console.error('\nโ [ERROR] Download/reply failed:', error);
 
     try {
-      let errorMsg = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
+      let errorMsg = 'โ เน€เธเธดเธ”เธเนเธญเธเธดเธ”เธเธฅเธฒเธ” เธเธฃเธธเธ“เธฒเธฅเธญเธเนเธซเธกเน';
       
       if (error.message?.includes('Image')) {
-        errorMsg = '📸 ไม่สามารถดาวน์โหลดรูป ลองส่งใหม่';
+        errorMsg = '๐“ธ เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เธ”เธฒเธงเธเนเนเธซเธฅเธ”เธฃเธนเธ เธฅเธญเธเธชเนเธเนเธซเธกเน';
       } else if (error.message?.includes('reply')) {
-        errorMsg = '📤 ไม่สามารถส่ง reply ลองใหม่';
+        errorMsg = '๐“ค เนเธกเนเธชเธฒเธกเธฒเธฃเธ–เธชเนเธ reply เธฅเธญเธเนเธซเธกเน';
       }
 
       await sendLineReply(event.replyToken, [
         {
           type: 'text',
-          text: `${errorMsg}\n\n📝 ${error.message || 'Unknown error'}`,
+          text: `${errorMsg}\n\n๐“ ${error.message || 'Unknown error'}`,
         },
       ]);
     } catch (fallbackError) {
-      console.error('⚠️ Could not send error message:', fallbackError);
+      console.error('โ ๏ธ Could not send error message:', fallbackError);
     }
   }
 }
@@ -342,15 +342,15 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
-    console.log('\n\n🔔 ========== LINE WEBHOOK RECEIVED ==========');
-    console.log(`📨 Request size: ${body.length} bytes`);
-    console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
+    console.log('\n\n๐”” ========== LINE WEBHOOK RECEIVED ==========');
+    console.log(`๐“จ Request size: ${body.length} bytes`);
+    console.log(`โฐ Timestamp: ${new Date().toISOString()}`);
 
     // Log environment health
     const health = checkEnvironmentHealth();
-    console.log(`🏥 Environment Health: ${health.status}`);
+    console.log(`๐ฅ Environment Health: ${health.status}`);
     if (health.status !== 'healthy') {
-      console.warn('⚠️ Missing environment variables:', 
+      console.warn('โ ๏ธ Missing environment variables:', 
         Object.entries(health.checks)
           .filter(([_, v]) => !v)
           .map(([k]) => k)
@@ -359,20 +359,21 @@ export async function POST(request: NextRequest) {
 
     // Handle empty body
     if (!body || body.trim() === '') {
-      console.log('✅ Empty body detected - verification request');
-      return corsResponse({ ok: true }, 200);
+      console.log('โ… Empty body detected - verification request');
+      return corsResponse(
+        { ok: true }, 200);
     }
 
     // Verify LINE signature
     const signature = request.headers.get('x-line-signature');
     if (!signature) {
-      console.warn('⚠️ No X-Line-Signature header found');
+      console.warn('โ ๏ธ No X-Line-Signature header found');
     } else {
-      console.log('🔐 Verifying LINE signature...');
+      console.log('๐” Verifying LINE signature...');
       if (!verifyLineSignature(body, signature)) {
-        console.warn('⚠️ Signature verification failed - but continuing anyway');
+        console.warn('โ ๏ธ Signature verification failed - but continuing anyway');
       } else {
-        console.log('✅ Signature verified');
+        console.log('โ… Signature verified');
       }
     }
 
@@ -381,7 +382,7 @@ export async function POST(request: NextRequest) {
     try {
       data = JSON.parse(body);
     } catch (e) {
-      console.error('❌ Failed to parse JSON body:', e);
+      console.error('โ Failed to parse JSON body:', e);
       return corsResponse(
         { error: 'Invalid JSON' },
         400
@@ -389,36 +390,36 @@ export async function POST(request: NextRequest) {
     }
 
     const events = data.events || [];
-    console.log(`📥 Events to process: ${events.length}`);
+    console.log(`๐“ฅ Events to process: ${events.length}`);
 
     // CRITICAL FIX: Vercel terminates function immediately after response
     // We must process events BEFORE returning 200 to ensure work completes
     // LINE allows 3 seconds - that's our window to at least start processing
     if (events.length > 0) {
       try {
-        console.log('\n💚 [SYNC PROCESSING STARTING] Processing before response...');
-        console.log(`⏱️ Task started at: ${Date.now()}`);
+        console.log('\n๐’ [SYNC PROCESSING STARTING] Processing before response...');
+        console.log(`โฑ๏ธ Task started at: ${Date.now()}`);
         
         // Connect to MongoDB FIRST before returning
-        console.log('📍 [STEP 0] Connecting to MongoDB...');
+        console.log('๐“ [STEP 0] Connecting to MongoDB...');
         await connectToDatabase();
-        console.log('✅ [STEP 0] MongoDB connected BEFORE response sent');
+        console.log('โ… [STEP 0] MongoDB connected BEFORE response sent');
 
         // Process each event
-        console.log(`\n📊 Processing ${events.length} event(s) synchronously...`);
+        console.log(`\n๐“ Processing ${events.length} event(s) synchronously...`);
         
         const processPromises = events.map((event: line.WebhookEvent, i: number) => {
           return (async () => {
             try {
-              console.log(`\n📌 [EVENT ${i + 1}/${events.length}] Type: ${event.type}`);
+              console.log(`\n๐“ [EVENT ${i + 1}/${events.length}] Type: ${event.type}`);
               const startTime = Date.now();
               
               await processLineEvent(event);
               
               const duration = Date.now() - startTime;
-              console.log(`   ✅ Event ${i + 1} completed in ${duration}ms`);
+              console.log(`   โ… Event ${i + 1} completed in ${duration}ms`);
             } catch (error: any) {
-              console.error(`\n❌ [EVENT ${i + 1}] Processing failed:`);
+              console.error(`\nโ [EVENT ${i + 1}] Processing failed:`);
               console.error(`   Error: ${error?.message}`);
               console.error(`   Type: ${error?.constructor?.name}`);
             }
@@ -433,27 +434,27 @@ export async function POST(request: NextRequest) {
 
         try {
           await Promise.race([Promise.all(processPromises), timeoutPromise]);
-          console.log('\n✨ [SUCCESS] All events processed before response\n');
+          console.log('\nโจ [SUCCESS] All events processed before response\n');
         } catch (timeoutError) {
-          console.warn('\n⏱️ [TIMEOUT] Processing exceeded 25s, returning response anyway');
+          console.warn('\nโฑ๏ธ [TIMEOUT] Processing exceeded 25s, returning response anyway');
           console.warn('   Events are still processing in the background...\n');
         }
       } catch (error: any) {
-        console.error('❌ [ERROR] Sync processing failed:', error?.message);
+        console.error('โ [ERROR] Sync processing failed:', error?.message);
         console.error('   Stack:', error?.stack?.split('\n').slice(0, 3).join('\n'));
       }
     }
 
     // Return 200 immediately to acknowledge webhook to LINE
-    console.log('✅ Returning 200 OK to LINE Platform');
-    console.log('🔔 =========================================\n');
+    console.log('โ… Returning 200 OK to LINE Platform');
+    console.log('๐”” =========================================\n');
 
     return corsResponse(
       { success: true, message: 'Webhook received and processing' },
       200
     );
   } catch (error: any) {
-    console.error('❌ [WEBHOOK ERROR]', error);
+    console.error('โ [WEBHOOK ERROR]', error);
     return corsResponse(
       { error: 'Webhook processing failed' },
       500
@@ -490,12 +491,12 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       message: 'LINE Webhook endpoint status',
       features: [
-        '✅ Image OCR extraction with Gemini',
-        '✅ Google Drive upload with retry',
-        '✅ MongoDB storage',
-        '✅ Rate limiting ready',
-        '✅ Enhanced error handling',
-        '✅ Diagnostic logging',
+        'โ… Image OCR extraction with Gemini',
+        'โ… Google Drive upload with retry',
+        'โ… MongoDB storage',
+        'โ… Rate limiting ready',
+        'โ… Enhanced error handling',
+        'โ… Diagnostic logging',
       ],
       environment_checks: health.checks,
       configuration: config,

@@ -21,7 +21,8 @@ export async function GET(
     if (!Types.ObjectId.isValid(id)) {
       return corsResponse(
         { error: 'Invalid receipt ID format' },
-        400
+        400,
+        request
       );
     }
 
@@ -31,7 +32,8 @@ export async function GET(
     if (!receipt) {
       return corsResponse(
         { error: 'Receipt not found' },
-        404
+        404,
+        request
       );
     }
 
@@ -40,13 +42,15 @@ export async function GET(
         success: true,
         data: receipt,
       },
-      200
+      200,
+      request
     );
   } catch (error: any) {
     console.error('Error fetching receipt:', error);
     return corsResponse(
       { error: 'Failed to fetch receipt' },
-      500
+      500,
+      request
     );
   }
 }
@@ -78,9 +82,10 @@ export async function PUT(
 
     // Validate MongoDB ObjectId
     if (!Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid receipt ID format' },
-        { status: 400 }
+        400,
+        request
       );
     }
 
@@ -116,12 +121,13 @@ export async function PUT(
     if (updateData.status) {
       const validStatuses = ['pending', 'reviewing', 'approved', 'rejected', 'completed', 'failed'];
       if (!validStatuses.includes(updateData.status)) {
-        return NextResponse.json(
+        return corsResponse(
           {
             error: 'Invalid status value',
             validStatuses,
           },
-          { status: 400 }
+          400,
+          request
         );
       }
     }
@@ -129,9 +135,10 @@ export async function PUT(
     // Check if receipt exists
     const existingReceipt = await Receipt.findById(id);
     if (!existingReceipt) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Receipt not found' },
-        { status: 404 }
+        404,
+        request
       );
     }
 
@@ -145,7 +152,7 @@ export async function PUT(
       }
     );
 
-    return NextResponse.json(
+    return corsResponse(
       {
         success: true,
         message: 'Receipt updated successfully',
@@ -159,31 +166,35 @@ export async function PUT(
           updatedAt: updatedReceipt.updatedAt,
         },
       },
-      { status: 200 }
+      200,
+      request
     );
   } catch (error: any) {
     console.error('Error updating receipt:', error);
 
     // Handle validation errors
     if (error.name === 'ValidationError') {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid data provided', details: error.message },
-        { status: 400 }
+        400,
+        request
       );
     }
 
     // Handle duplicate key errors
     if (error.code === 11000) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Duplicate value for unique field' },
-        { status: 400 }
+        400,
+        request
       );
     }
 
     // Generic error response
-    return NextResponse.json(
+    return corsResponse(
       { error: 'Failed to update receipt' },
-      { status: 500 }
+      500,
+      request
     );
   }
 }
@@ -203,9 +214,10 @@ export async function DELETE(
 
     // Validate MongoDB ObjectId
     if (!Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid receipt ID format' },
-        { status: 400 }
+        400,
+        request
       );
     }
 
@@ -213,13 +225,14 @@ export async function DELETE(
     const deletedReceipt = await Receipt.findByIdAndDelete(id);
 
     if (!deletedReceipt) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Receipt not found' },
-        { status: 404 }
+        404,
+        request
       );
     }
 
-    return NextResponse.json(
+    return corsResponse(
       {
         success: true,
         message: 'Receipt deleted successfully',
@@ -228,13 +241,15 @@ export async function DELETE(
           transactionId: deletedReceipt.transactionId,
         },
       },
-      { status: 200 }
+      200,
+      request
     );
   } catch (error: any) {
     console.error('Error deleting receipt:', error);
-    return NextResponse.json(
+    return corsResponse(
       { error: 'Failed to delete receipt' },
-      { status: 500 }
+      500,
+      request
     );
   }
 }
@@ -244,13 +259,6 @@ export async function DELETE(
  * Handle CORS preflight requests
  */
 export async function OPTIONS(request: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-api-key, authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const response = new NextResponse(null, { status: 200 });
+  return addCorsHeaders(response, request);
 }

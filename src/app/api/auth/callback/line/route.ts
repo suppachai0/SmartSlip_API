@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 /**
@@ -75,7 +75,8 @@ export async function GET(request: NextRequest) {
     // 1. Store sessionToken in localStorage/cookies
     // 2. Redirect to dashboard
     // 3. Set up API authentication headers
-    return corsResponse({
+    return corsResponse(
+        {
       success: true,
       data: result.data,
       sessionToken: result.data?.sessionToken,
@@ -142,7 +143,8 @@ export async function POST(request: NextRequest) {
 
     const result = await tokenResponse.json();
 
-    return corsResponse({
+    return corsResponse(
+        {
       success: true,
       data: result.data,
       sessionToken: result.data?.sessionToken,

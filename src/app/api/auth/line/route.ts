@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
 import { generateJWT } from '@/lib/auth';
@@ -130,7 +130,8 @@ export async function POST(request: NextRequest) {
     };
     const sessionToken = generateJWT(sessionPayload);
 
-    return corsResponse({
+    return corsResponse(
+        {
       success: true,
       data: {
         user: {
@@ -159,7 +160,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  return corsResponse({
+  return corsResponse(
+        {
     status: 'ok',
     message: 'POST /api/auth/line with { code } to exchange LINE login code',
   });

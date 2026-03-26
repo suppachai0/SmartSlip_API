@@ -1,13 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * Get the allowed CORS origin for a given request origin
+ * Handles comma-separated list of allowed origins
+ */
+function getAllowedOrigin(requestOrigin: string | null): string | null {
+  if (!requestOrigin) return null;
+  
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : ['*'];
+
+  // Wildcard allows all
+  if (allowedOrigins.includes('*')) {
+    return '*';
+  }
+
+  // Check if request origin is in allowed list
+  if (allowedOrigins.includes(requestOrigin)) {
+    return requestOrigin;
+  }
+
+  return null;
+}
+
 export function middleware(request: NextRequest) {
-  // CORS Headers
-  const headers = new Headers({
-    'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, authorization',
-    'Access-Control-Max-Age': '86400', // 24 hours
-  });
+  const requestOrigin = request.headers.get('origin') || null;
+  const allowedOrigin = getAllowedOrigin(requestOrigin);
+  
+  const headers = new Headers();
+  
+  // Only set CORS origin if it's allowed
+  if (allowedOrigin) {
+    headers.set('Access-Control-Allow-Origin', allowedOrigin);
+  }
+  
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key, authorization');
+  headers.set('Access-Control-Max-Age', '86400'); // 24 hours
 
   // Handle preflight requests (OPTIONS)
   if (request.method === 'OPTIONS') {
