@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 /**
  * GET /api/receipts/[id]
@@ -18,9 +19,9 @@ export async function GET(
 
     // Validate MongoDB ObjectId
     if (!Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid receipt ID format' },
-        { status: 400 }
+        400
       );
     }
 
@@ -28,24 +29,24 @@ export async function GET(
     const receipt = await Receipt.findById(id);
 
     if (!receipt) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Receipt not found' },
-        { status: 404 }
+        404
       );
     }
 
-    return NextResponse.json(
+    return corsResponse(
       {
         success: true,
         data: receipt,
       },
-      { status: 200 }
+      200
     );
   } catch (error: any) {
     console.error('Error fetching receipt:', error);
-    return NextResponse.json(
+    return corsResponse(
       { error: 'Failed to fetch receipt' },
-      { status: 500 }
+      500
     );
   }
 }

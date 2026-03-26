@@ -6,6 +6,7 @@ import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
 import { appendReceiptToSheet } from '@/lib/googleSheets';
+import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -359,7 +360,7 @@ export async function POST(request: NextRequest) {
     // Handle empty body
     if (!body || body.trim() === '') {
       console.log('✅ Empty body detected - verification request');
-      return NextResponse.json({ ok: true }, { status: 200 });
+      return corsResponse({ ok: true }, 200);
     }
 
     // Verify LINE signature
@@ -381,9 +382,9 @@ export async function POST(request: NextRequest) {
       data = JSON.parse(body);
     } catch (e) {
       console.error('❌ Failed to parse JSON body:', e);
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid JSON' },
-        { status: 400 }
+        400
       );
     }
 
@@ -447,16 +448,16 @@ export async function POST(request: NextRequest) {
     console.log('✅ Returning 200 OK to LINE Platform');
     console.log('🔔 =========================================\n');
 
-    return NextResponse.json(
+    return corsResponse(
       { success: true, message: 'Webhook received and processing' },
-      { status: 200 }
+      200
     );
   } catch (error: any) {
     console.error('❌ Fatal webhook error:', error);
     console.error('Error details:', error.message);
     console.error('Stack:', error.stack);
     // Always return 200 to LINE
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return corsResponse({ ok: true }, 200);
   }
 }
 
@@ -474,7 +475,7 @@ export async function GET() {
     google_drive: process.env.GOOGLE_DRIVE_FOLDER_ID ? 'configured' : 'MISSING',
   };
 
-  return NextResponse.json(
+  return corsResponse(
     {
       status: health.status === 'healthy' ? 'healthy' : 'warning',
       timestamp: new Date().toISOString(),
@@ -491,7 +492,7 @@ export async function GET() {
       configuration: config,
       webhook_url: `POST /api/line`,
     },
-    { status: health.status === 'healthy' ? 200 : 503 }
+    health.status === 'healthy' ? 200 : 503
   );
 }
 
@@ -500,13 +501,10 @@ export async function GET() {
  * Handle CORS preflight requests
  */
 export async function OPTIONS(request: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-api-key, authorization, x-line-signature',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const response = new NextResponse(null, { status: 200 });
+  response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key, authorization, x-line-signature');
+  response.headers.set('Access-Control-Max-Age', '86400');
+  return response;
 }

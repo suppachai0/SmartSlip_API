@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 /**
  * GET /api/receipts/summary
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
       createdAt: { $gte: sevenDaysAgo },
     });
 
-    return NextResponse.json(
+    return corsResponse(
       {
         success: true,
         summary: {
@@ -119,13 +120,13 @@ export async function GET(request: NextRequest) {
           timestamp: new Date().toISOString(),
         },
       },
-      { status: 200 }
+      200
     );
   } catch (error: any) {
     console.error('Error fetching summary:', error);
-    return NextResponse.json(
+    return corsResponse(
       { error: 'Failed to fetch summary' },
-      { status: 500 }
+      500
     );
   }
 }

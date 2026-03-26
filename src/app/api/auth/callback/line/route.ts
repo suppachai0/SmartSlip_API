@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 /**
  * LINE OAuth2 Callback Route
@@ -19,21 +20,21 @@ export async function GET(request: NextRequest) {
     // Handle LINE OAuth error
     if (error) {
       console.error('LINE OAuth error:', error, errorDescription);
-      return NextResponse.json(
+      return corsResponse(
         {
           success: false,
           error,
           error_description: errorDescription,
         },
-        { status: 400 }
+        400
       );
     }
 
     // Validate authorization code
     if (!code) {
-      return NextResponse.json(
+      return corsResponse(
         { success: false, error: 'Missing authorization code' },
-        { status: 400 }
+        400
       );
     }
 
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
     // 1. Store sessionToken in localStorage/cookies
     // 2. Redirect to dashboard
     // 3. Set up API authentication headers
-    return NextResponse.json({
+    return corsResponse({
       success: true,
       data: result.data,
       sessionToken: result.data?.sessionToken,
@@ -83,13 +84,13 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('LINE callback error:', error);
-    return NextResponse.json(
+    return corsResponse(
       {
         success: false,
         error: 'Internal server error',
         message: error?.message,
       },
-      { status: 500 }
+      500
     );
   }
 }
@@ -104,9 +105,9 @@ export async function POST(request: NextRequest) {
     const { code, redirectUri } = body;
 
     if (!code) {
-      return NextResponse.json(
+      return corsResponse(
         { success: false, error: 'Missing authorization code' },
-        { status: 400 }
+        400
       );
     }
 
@@ -129,19 +130,19 @@ export async function POST(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errorData = await tokenResponse.json();
       console.error('Token exchange failed:', errorData);
-      return NextResponse.json(
+      return corsResponse(
         {
           success: false,
           error: 'Failed to exchange authorization code',
           details: errorData,
         },
-        { status: 400 }
+        400
       );
     }
 
     const result = await tokenResponse.json();
 
-    return NextResponse.json({
+    return corsResponse({
       success: true,
       data: result.data,
       sessionToken: result.data?.sessionToken,
@@ -150,13 +151,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('LINE callback error:', error);
-    return NextResponse.json(
+    return corsResponse(
       {
         success: false,
         error: 'Internal server error',
         message: error?.message,
       },
-      { status: 500 }
+      500
     );
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
 import { generateJWT } from '@/lib/auth';
+import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
 const LINE_VERIFY_URL = 'https://api.line.me/oauth2/v2.1/verify';
@@ -32,9 +33,9 @@ export async function POST(request: NextRequest) {
     const { code, redirectUri } = await request.json();
 
     if (!code) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Missing "code" in request body' },
-        { status: 400 }
+        400
       );
     }
 
@@ -43,9 +44,9 @@ export async function POST(request: NextRequest) {
     const defaultRedirectUri = process.env.LINE_LOGIN_REDIRECT_URI;
 
     if (!channelId || !channelSecret || !defaultRedirectUri) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'LINE Login environment variables are not configured' },
-        { status: 500 }
+        500
       );
     }
 
@@ -71,9 +72,9 @@ export async function POST(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
       console.error('LINE token exchange failed:', errorText);
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Failed to exchange authorization code', details: errorText },
-        { status: 400 }
+        400
       );
     }
 
@@ -96,9 +97,9 @@ export async function POST(request: NextRequest) {
     if (!verifyResponse.ok) {
       const errorText = await verifyResponse.text();
       console.error('LINE ID token verification failed:', errorText);
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Failed to verify LINE ID token', details: errorText },
-        { status: 400 }
+        400
       );
     }
 
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest) {
     };
     const sessionToken = generateJWT(sessionPayload);
 
-    return NextResponse.json({
+    return corsResponse({
       success: true,
       data: {
         user: {
@@ -150,15 +151,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('LINE Login error:', error);
-    return NextResponse.json(
+    return corsResponse(
       { error: 'Internal server error', message: error?.message },
-      { status: 500 }
+      500
     );
   }
 }
 
 export async function GET() {
-  return NextResponse.json({
+  return corsResponse({
     status: 'ok',
     message: 'POST /api/auth/line with { code } to exchange LINE login code',
   });

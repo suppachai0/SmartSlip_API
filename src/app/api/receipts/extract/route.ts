@@ -4,6 +4,7 @@ import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
+import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 /**
  * POST /api/receipts/extract
@@ -40,9 +41,9 @@ export async function POST(request: NextRequest) {
       formData = await request.formData();
     } catch (error) {
       console.error('❌ Failed to parse form data:', error);
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid form data. Please send multipart/form-data with image and userId.' },
-        { status: 400 }
+        400
       );
     }
 
@@ -51,33 +52,33 @@ export async function POST(request: NextRequest) {
 
     // Step 2: Validate required fields
     if (!imageFile) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Missing required field: image' },
-        { status: 400 }
+        400
       );
     }
 
     if (!userId) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Missing required field: userId' },
-        { status: 400 }
+        400
       );
     }
 
     // Step 3: Validate file type
     if (!imageFile.type.startsWith('image/')) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'File must be an image (JPEG, PNG, WebP, etc.)' },
-        { status: 400 }
+        400
       );
     }
 
     // Step 4: Validate file size (max 20MB)
     const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
     if (imageFile.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
+      return corsResponse(
         { error: `File size must be less than 20MB. Current: ${(imageFile.size / 1024 / 1024).toFixed(2)}MB` },
-        { status: 400 }
+        400
       );
     }
 
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
     // Step 8: Check if extraction failed
     if (slipData.method === 'manual_required' && slipData.amount === 0) {
       console.warn('⚠️ [EXTRACT API] Image could not be processed - returning limited response');
-      return NextResponse.json(
+      return corsResponse(
         {
           success: false,
           message: 'Could not extract receipt data from image',
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
             recommendation: 'Please ensure the receipt is clear, well-lit, and not tilted',
           },
         },
-        { status: 422 } // 422 Unprocessable Entity
+        422 // 422 Unprocessable Entity
       );
     }
 
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 11: Return success response
-    const response = NextResponse.json(
+    const response = corsResponse(
       {
         success: true,
         message: 'Receipt extracted and saved successfully',
@@ -185,7 +186,7 @@ export async function POST(request: NextRequest) {
           createdAt: newReceipt.createdAt,
         },
       },
-      { status: 201 }
+      201
     );
 
     console.log('✅ [EXTRACT API] Returning 201 Created');
@@ -197,41 +198,41 @@ export async function POST(request: NextRequest) {
 
     // Handle specific errors
     if (error.name === 'ValidationError') {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Validation error: ' + error.message },
-        { status: 400 }
+        400
       );
     }
 
     if (error.message?.includes('timeout')) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Request timeout. Image might be too complex. Please try a simpler receipt.' },
-        { status: 504 }
+        504
       );
     }
 
     if (error.message?.includes('Cloud Storage')) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Failed to upload file to storage. Please try again.' },
-        { status: 503 }
+        503
       );
     }
 
     if (error.message?.includes('Gemini') || error.message?.includes('AI')) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'AI processing failed. Please try again later.' },
-        { status: 503 }
+        503
       );
     }
 
     // Generic error
-    return NextResponse.json(
+    return corsResponse(
       {
         error: 'Internal server error',
         message: process.env.NODE_ENV === 'development' ? error.message : undefined,
         code: error?.code,
       },
-      { status: 500 }
+      500
     );
   }
 }
@@ -241,15 +242,8 @@ export async function POST(request: NextRequest) {
  * Handle CORS preflight requests
  */
 export async function OPTIONS(request: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-api-key, authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const response = new NextResponse(null, { status: 200 });
+  return addCorsHeaders(response);
 }
 
 /**

@@ -4,6 +4,7 @@ import Receipt from '@/models/Receipt';
 import { validateApiKey, unauthorizedResponse } from '@/lib/auth';
 import { checkRateLimit, rateLimitExceededResponse, addRateLimitHeaders } from '@/lib/rateLimit';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
+import { addCorsHeaders, corsResponse } from '@/lib/cors';
 
 /**
  * POST /api/receipts
@@ -48,9 +49,9 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json();
     } catch (e) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid JSON in request body' },
-        { status: 400 }
+        400
       );
     }
 
@@ -67,30 +68,30 @@ export async function POST(request: NextRequest) {
 
     // Step 5: Validate required fields
     if (!storeName || typeof storeName !== 'string' || storeName.trim() === '') {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'storeName is required and must be a non-empty string' },
-        { status: 400 }
+        400
       );
     }
 
     if (totalAmount === undefined || totalAmount === null) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'totalAmount is required' },
-        { status: 400 }
+        400
       );
     }
 
     if (typeof totalAmount !== 'number' || totalAmount < 0) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'totalAmount must be a non-negative number' },
-        { status: 400 }
+        400
       );
     }
 
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'userId is required and must be a non-empty string' },
-        { status: 400 }
+        400
       );
     }
 
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 9: Return success response
-    let response = NextResponse.json(
+    let response = corsResponse(
       {
         success: true,
         message: 'Receipt created successfully',
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
           createdAt: receipt.createdAt,
         },
       },
-      { status: 201 }
+      201
     );
 
     // Add rate limit headers
@@ -167,32 +168,32 @@ export async function POST(request: NextRequest) {
 
     // Handle MongoDB connection errors
     if (error.name === 'MongooseError') {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Database connection failed' },
-        { status: 500 }
+        500
       );
     }
 
     // Handle validation errors
     if (error.name === 'ValidationError') {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Invalid data provided', details: error.message },
-        { status: 400 }
+        400
       );
     }
 
     // Handle duplicate key errors
     if (error.code === 11000) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Duplicate transaction or receipt number' },
-        { status: 400 }
+        400
       );
     }
 
     // Generic error response
-    return NextResponse.json(
+    return corsResponse(
       { error: 'An error occurred while creating receipt' },
-      { status: 500 }
+      500
     );
   }
 }
@@ -244,13 +245,13 @@ export async function GET(request: NextRequest) {
       .limit(100);
 
     // Step 7: Return response with rate limit headers
-    let response = NextResponse.json(
+    let response = corsResponse(
       {
         success: true,
         data: receipts,
         count: receipts.length,
       },
-      { status: 200 }
+      200
     );
 
     response = addRateLimitHeaders(
@@ -262,9 +263,9 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error: any) {
     console.error('Error fetching receipts:', error);
-    return NextResponse.json(
+    return corsResponse(
       { error: 'Failed to fetch receipts' },
-      { status: 500 }
+      500
     );
   }
 }
@@ -274,13 +275,6 @@ export async function GET(request: NextRequest) {
  * Handle CORS preflight requests
  */
 export async function OPTIONS(request: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-api-key, authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const response = new NextResponse(null, { status: 200 });
+  return addCorsHeaders(response);
 }
