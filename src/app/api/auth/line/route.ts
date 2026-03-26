@@ -164,3 +164,11 @@ export async function GET() {
     message: 'POST /api/auth/line with { code } to exchange LINE login code',
   });
 }
+/**
+ * OPTIONS /api/auth/line
+ * Handle CORS preflight requests
+ */
+export async function OPTIONS(request: NextRequest) {
+  const response = new NextResponse(null, { status: 200 });
+  return addCorsHeaders(response);
+}

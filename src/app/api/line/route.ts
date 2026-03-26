@@ -453,6 +453,23 @@ export async function POST(request: NextRequest) {
       200
     );
   } catch (error: any) {
+    console.error('❌ [WEBHOOK ERROR]', error);
+    return corsResponse(
+      { error: 'Webhook processing failed' },
+      500
+    );
+  }
+}
+
+/**
+ * OPTIONS /api/line
+ * Handle CORS preflight requests
+ */
+export async function OPTIONS(request: NextRequest) {
+  const response = new NextResponse(null, { status: 200 });
+  return addCorsHeaders(response);
+}
+  } catch (error: any) {
     console.error('❌ Fatal webhook error:', error);
     console.error('Error details:', error.message);
     console.error('Stack:', error.stack);

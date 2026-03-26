@@ -161,3 +161,12 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+/**
+ * OPTIONS /api/auth/callback/line
+ * Handle CORS preflight requests
+ */
+export async function OPTIONS(request: NextRequest) {
+  const response = new NextResponse(null, { status: 200 });
+  return addCorsHeaders(response);
+}
