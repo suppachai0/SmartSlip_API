@@ -314,7 +314,7 @@ export async function getUserMonthFolder(
     // Step 5: Find or create month folder
     const monthName = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleString(
       'en-US',
-      { month: 'MMMM', year: 'numeric' }
+      { month: 'long', year: 'numeric' }
     );
     let monthFolderId = await findOrCreateFolder(
       userDrive,
