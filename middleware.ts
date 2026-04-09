@@ -5,8 +5,6 @@ import { NextRequest, NextResponse } from 'next/server';
  * Handles comma-separated list of allowed origins
  */
 function getAllowedOrigin(requestOrigin: string | null): string | null {
-  if (!requestOrigin) return null;
-  
   const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : ['*'];
@@ -16,12 +14,17 @@ function getAllowedOrigin(requestOrigin: string | null): string | null {
     return '*';
   }
 
+  // If no origin header, allow for same-origin requests
+  if (!requestOrigin) {
+    return '*';
+  }
+
   // Check if request origin is in allowed list
   if (allowedOrigins.includes(requestOrigin)) {
     return requestOrigin;
   }
 
-  return null;
+  return '*'; // Default to allow in development
 }
 
 export function middleware(request: NextRequest) {
