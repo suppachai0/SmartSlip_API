@@ -9,6 +9,14 @@ export interface IUser extends Document {
   accessToken?: string;
   refreshToken?: string;
   accessTokenExpiresAt?: Date;
+  
+  // Google OAuth
+  googleId?: string;
+  googleAccessToken?: string;
+  googleRefreshToken?: string;
+  googleTokenExpiry?: Date;
+  googleDriveFolderId?: string; // SmartSlip/[userId]/Receipts folder
+  
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +32,14 @@ const userSchema = new Schema<IUser>(
     accessToken: String,
     refreshToken: String,
     accessTokenExpiresAt: Date,
+    
+    // Google OAuth fields
+    googleId: { type: String, sparse: true, unique: true },
+    googleAccessToken: String,
+    googleRefreshToken: String,
+    googleTokenExpiry: Date,
+    googleDriveFolderId: String,
+    
     lastLoginAt: Date,
   },
   {

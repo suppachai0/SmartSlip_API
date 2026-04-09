@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserMonthFolder } from '@/lib/googledrive';
+import connectToDatabase from '@/lib/mongodb';
+import User from '@/models/User';
+import { getUserMonthFolder } from '@/lib/googleDrive';
 import { corsResponse } from '@/lib/cors';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
-    const userName = searchParams.get('name') || undefined;
 
     if (!userId) {
       return corsResponse(
@@ -16,7 +17,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const folderId = await getUserMonthFolder(userId, userName);
+    // Connect to database and get user
+    await connectToDatabase();
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return corsResponse(
+        { error: 'User not found' },
+        404,
+        request
+      );
+    }
+
+    // Check if user has Google OAuth token
+    if (!user.googleAccessToken) {
+      return corsResponse(
+        { error: 'User has not authorized Google Drive access' },
+        401,
+        request
+      );
+    }
+
+    // Get or create month folder in user's drive
+    const folderId = await getUserMonthFolder(userId, user.googleAccessToken, user.displayName);
+
+    // Save folder ID to user record
+    user.googleDriveFolderId = folderId;
+    await user.save();
 
     return corsResponse(
       {
