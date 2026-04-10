@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage';
+import { uploadToUserGoogleDrive } from '@/lib/googleDrive';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
 
     const imageFile = formData.get('image') as File | null;
     const userId = formData.get('userId') as string | null;
+    const googleAccessToken = formData.get('googleAccessToken') as string | null;
 
     // Step 2: Validate required fields
     if (!imageFile) {
@@ -130,7 +132,24 @@ export async function POST(request: NextRequest) {
     const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
     const storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
     console.log('โ… [EXTRACT API] Cloud Storage upload complete:', storageResult.publicUrl);
-
+    // Step 9.5: Upload to Google Drive (optional - only if user provided Google token)
+    let driveFileId = null;
+    if (googleAccessToken) {
+      try {
+        console.log('๐"ค [EXTRACT API] Uploading to user Google Drive...');
+        const driveResult = await uploadToUserGoogleDrive(
+          imageBuffer,
+          `receipt-${slipData.amount}-${timestamp}.jpg`,
+          googleAccessToken,
+          userId
+        );
+        driveFileId = driveResult.fileId;
+        console.log('โ… [EXTRACT API] Google Drive upload complete:', driveFileId);
+      } catch (driveError) {
+        console.warn('โ ๏ธ [EXTRACT API] Google Drive upload failed (not critical):', driveError);
+        // Continue anyway - don't block if Drive upload fails
+      }
+    }
     // Step 10: Save to MongoDB
     console.log('๐’พ [EXTRACT API] Saving to MongoDB...');
     const transactionId = `WEB-${userId}-${Date.now()}`;
@@ -145,6 +164,7 @@ export async function POST(request: NextRequest) {
       status: slipData.confidence === 'high' ? 'approved' : 'pending',
       userId,
       imageURL: storageResult.publicUrl,
+      driveFileId,
       customerName: slipData.sender,
       extractedAmount: slipData.amount,
       extractedSender: slipData.sender,
@@ -188,6 +208,7 @@ export async function POST(request: NextRequest) {
           items: slipData.items,
           confidence: slipData.confidence,
           imageURL: storageResult.publicUrl,
+          driveFileId,
           storeName: slipData.receiver,
           createdAt: newReceipt.createdAt,
         },

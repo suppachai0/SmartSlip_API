@@ -15,6 +15,7 @@ export interface IReceipt extends Document {
   storeName: string;
   userId: string;
   imageURL?: string;
+  driveFileId?: string; // Google Drive file ID (optional)
   items?: {
     description: string;
     quantity: number;
@@ -76,6 +77,10 @@ const receiptSchema = new Schema<IReceipt>(
     },
     imageURL: {
       type: String,
+    },
+    driveFileId: {
+      type: String,
+      default: null,
     },
     issueDate: {
       type: Date,
