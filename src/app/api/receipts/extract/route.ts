@@ -126,17 +126,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 9: Upload to Cloud Storage
-    console.log('โ๏ธ [EXTRACT API] Uploading to Cloud Storage...');
+        // Step 9: Upload to storage (priority-based)
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
-    const storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
-    console.log('โ… [EXTRACT API] Cloud Storage upload complete:', storageResult.publicUrl);
-    // Step 9.5: Upload to Google Drive (optional - only if user provided Google token)
+    
     let driveFileId = null;
+    let storageResult;
+
     if (googleAccessToken) {
+      // USER AUTHORIZED: Google Drive PRIMARY + Cloud Storage BACKUP
       try {
-        console.log('๐"ค [EXTRACT API] Uploading to user Google Drive...');
+        // Step 9a: Upload to Google Drive FIRST (primary)
         const driveResult = await uploadToUserGoogleDrive(
           imageBuffer,
           `receipt-${slipData.amount}-${timestamp}.jpg`,
@@ -144,12 +144,24 @@ export async function POST(request: NextRequest) {
           userId
         );
         driveFileId = driveResult.fileId;
-        console.log('โ… [EXTRACT API] Google Drive upload complete:', driveFileId);
       } catch (driveError) {
-        console.warn('โ ๏ธ [EXTRACT API] Google Drive upload failed (not critical):', driveError);
-        // Continue anyway - don't block if Drive upload fails
+        throw new Error(`Google Drive upload failed: ${(driveError as any)?.message}`);
       }
+
+      // Step 9b: Upload to Cloud Storage as BACKUP
+      try {
+        storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
+      } catch (storageError) {
+        storageResult = {
+          publicUrl: `https://drive.google.com/file/d/${driveFileId}`,
+          fileId: driveFileId,
+        };
+      }
+    } else {
+      // USER NOT AUTHORIZED: Cloud Storage ONLY
+      storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
     }
+
     // Step 10: Save to MongoDB
     console.log('๐’พ [EXTRACT API] Saving to MongoDB...');
     const transactionId = `WEB-${userId}-${Date.now()}`;
