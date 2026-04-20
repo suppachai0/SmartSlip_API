@@ -3,7 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage';
-import { uploadToUserGoogleDrive } from '@/lib/googleDrive';
+import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
 
     const imageFile = formData.get('image') as File | null;
     const userId = formData.get('userId') as string | null;
-    const googleAccessToken = formData.get('googleAccessToken') as string | null;
 
     // Step 2: Validate required fields
     if (!imageFile) {
@@ -126,40 +125,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-        // Step 9: Upload to storage (priority-based)
+        // Step 9: Upload to storage (priority-based with Service Account)
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
     
     let driveFileId = null;
     let storageResult;
 
-    if (googleAccessToken) {
-      // USER AUTHORIZED: Google Drive PRIMARY + Cloud Storage BACKUP
-      try {
-        // Step 9a: Upload to Google Drive FIRST (primary)
-        const driveResult = await uploadToUserGoogleDrive(
-          imageBuffer,
-          `receipt-${slipData.amount}-${timestamp}.jpg`,
-          googleAccessToken,
-          userId
-        );
-        driveFileId = driveResult.fileId;
-      } catch (driveError) {
-        throw new Error(`Google Drive upload failed: ${(driveError as any)?.message}`);
-      }
+    // Step 9a: Upload to Google Drive (Service Account - PRIMARY)
+    console.log('[EXTRACT API] Uploading to Google Drive using Service Account (PRIMARY)...');
+    try {
+      const driveResult = await uploadToGoogleDriveWithRetry(
+        imageBuffer,
+        `receipt-${slipData.amount}-${timestamp}.jpg`,
+        imageFile.type
+      );
+      driveFileId = driveResult.fileId;
+      console.log('[EXTRACT API] Google Drive upload successful:', driveFileId);
+    } catch (driveError) {
+      console.error('[EXTRACT API] Google Drive upload failed:', driveError);
+      throw new Error(`Google Drive upload failed: ${(driveError as any)?.message}`);
+    }
 
-      // Step 9b: Upload to Cloud Storage as BACKUP
-      try {
-        storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
-      } catch (storageError) {
-        storageResult = {
-          publicUrl: `https://drive.google.com/file/d/${driveFileId}`,
-          fileId: driveFileId,
-        };
-      }
-    } else {
-      // USER NOT AUTHORIZED: Cloud Storage ONLY
+    // Step 9b: Upload to Cloud Storage (BACKUP)
+    console.log('[EXTRACT API] Uploading to Cloud Storage as backup...');
+    try {
       storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
+      console.log('[EXTRACT API] Cloud Storage backup upload complete:', storageResult.publicUrl);
+    } catch (storageError) {
+      console.warn('[EXTRACT API] Cloud Storage backup failed (continuing with Drive-only):', storageError);
+      // Fall back to Drive-only if Cloud Storage fails
+      storageResult = {
+        publicUrl: `https://drive.google.com/file/d/${driveFileId}`,
+        fileId: driveFileId,
+      };
     }
 
     // Step 10: Save to MongoDB
