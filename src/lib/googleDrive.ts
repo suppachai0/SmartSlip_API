@@ -454,7 +454,7 @@ export async function uploadToUserGoogleDrive(
 export async function createFolderStructureWithServiceAccount(
   userId: string,
   userName?: string
-): Promise<string> {
+): Promise<{ monthFolderId: string; userFolderId: string }> {
   try {
     const now = new Date();
     const year = now.getFullYear().toString();
@@ -502,10 +502,43 @@ export async function createFolderStructureWithServiceAccount(
     );
     console.log(`✓ [SERVICE ACCOUNT] Month folder (${month}-${monthName}): ${monthFolderId}`);
 
-    return monthFolderId;
+    return { monthFolderId, userFolderId };
   } catch (error) {
     console.error('❌ [SERVICE ACCOUNT] Failed to create folder structure:', error);
     throw new Error(`Failed to create folder structure with Service Account: ${error}`);
+  }
+}
+
+/**
+ * Share a Google Drive folder with a specific user email using Service Account
+ * @param folderId - Folder ID to share
+ * @param userEmail - Email address of the user to share with
+ */
+export async function shareFolderWithUser(
+  folderId: string,
+  userEmail: string
+): Promise<void> {
+  try {
+    console.log(`🔗 [SERVICE ACCOUNT] Sharing folder ${folderId} with ${userEmail}`);
+    await drive.permissions.create({
+      fileId: folderId,
+      requestBody: {
+        type: 'user',
+        role: 'writer',
+        emailAddress: userEmail,
+      },
+      sendNotificationEmail: false,
+      supportsAllDrives: true,
+    } as any);
+    console.log(`✅ [SERVICE ACCOUNT] Folder shared with ${userEmail}`);
+  } catch (error: any) {
+    // Ignore "already shared" errors
+    if (error?.message?.includes('already') || error?.code === 400) {
+      console.log(`ℹ️ [SERVICE ACCOUNT] Folder already shared with ${userEmail}`);
+      return;
+    }
+    console.error(`❌ [SERVICE ACCOUNT] Failed to share folder with ${userEmail}:`, error);
+    throw error;
   }
 }
 

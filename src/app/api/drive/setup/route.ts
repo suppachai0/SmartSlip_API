@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
-import { createFolderStructureWithServiceAccount } from '@/lib/googleDrive';
+import { createFolderStructureWithServiceAccount, shareFolderWithUser } from '@/lib/googleDrive';
 import { corsResponse } from '@/lib/cors';
 
 /**
@@ -9,10 +9,12 @@ import { corsResponse } from '@/lib/cors';
  * Initialize Google Drive folder structure for user
  * Creates folders: SmartSlip > [userId] > Receipts > [Year] > [Month]
  * Uses Service Account - NO USER AUTHORIZATION NEEDED
+ * Shares folder with user email automatically
  * 
  * Request:
  * {
  *   userId: string (required) - User ID from database
+ *   email: string (optional) - User email for sharing folder
  * }
  * 
  * Response:
@@ -41,7 +43,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { userId } = body;
+    const { userId, email: emailFromRequest } = body;
 
     // Validate required fields
     if (!userId) {
@@ -58,18 +60,40 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     console.log('✅ [DRIVE SETUP API] MongoDB connected');
 
+    // Get user email for folder sharing
+    // Priority: 1. Email from Frontend request, 2. Email from MongoDB user document
+    let userEmail = emailFromRequest;
+    if (!userEmail) {
+      const existingUser = await User.findById(userId);
+      userEmail = existingUser?.email;
+    }
+
+    if (userEmail) {
+      console.log(`📧 [DRIVE SETUP API] Using email for sharing: ${userEmail}`);
+    }
+
     // Create folder structure using Service Account (no user token needed)
     console.log('📂 [DRIVE SETUP API] Creating folder structure with Service Account...');
-    const monthFolderId = await createFolderStructureWithServiceAccount(userId);
+    const { monthFolderId, userFolderId } = await createFolderStructureWithServiceAccount(userId);
 
     console.log(`✅ [DRIVE SETUP API] Month folder created: ${monthFolderId}`);
 
-    // Update user document with folder ID
+    // Share user folder with user's email so they can access it directly
+    if (userEmail) {
+      try {
+        await shareFolderWithUser(userFolderId, userEmail);
+        console.log(`✅ [DRIVE SETUP API] Folder shared with user: ${userEmail}`);
+      } catch (shareError) {
+        console.warn('⚠️ [DRIVE SETUP API] Could not share folder (non-fatal):', shareError);
+      }
+    }
+
+    // Update user document with folder ID (save userFolderId for direct browsing)
     console.log(`💾 [DRIVE SETUP API] Updating user document...`);
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
-        googleDriveFolderId: monthFolderId,
+        googleDriveFolderId: userFolderId,
       },
       { new: true }
     );
