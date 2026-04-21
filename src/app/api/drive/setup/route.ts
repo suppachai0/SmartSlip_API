@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
-import { getUserMonthFolder } from '@/lib/googleDrive';
+import { createFolderStructureWithServiceAccount } from '@/lib/googleDrive';
 import { corsResponse } from '@/lib/cors';
 
 /**
  * POST /api/drive/setup
  * Initialize Google Drive folder structure for user
  * Creates folders: SmartSlip > [userId] > Receipts > [Year] > [Month]
+ * Uses Service Account - NO USER AUTHORIZATION NEEDED
  * 
  * Request:
  * {
  *   userId: string (required) - User ID from database
- *   googleAccessToken: string (required) - User's Google OAuth access token
  * }
  * 
  * Response:
@@ -41,20 +41,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { userId, googleAccessToken } = body;
+    const { userId } = body;
 
     // Validate required fields
     if (!userId) {
       return corsResponse(
         { error: 'Missing required field: userId' },
-        400,
-        request
-      );
-    }
-
-    if (!googleAccessToken) {
-      return corsResponse(
-        { error: 'Missing required field: googleAccessToken' },
         400,
         request
       );
@@ -66,12 +58,9 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     console.log('✅ [DRIVE SETUP API] MongoDB connected');
 
-    // Create folder structure and get month folder ID
-    console.log('📂 [DRIVE SETUP API] Creating folder structure...');
-    const monthFolderId = await getUserMonthFolder(
-      userId,
-      googleAccessToken
-    );
+    // Create folder structure using Service Account (no user token needed)
+    console.log('📂 [DRIVE SETUP API] Creating folder structure with Service Account...');
+    const monthFolderId = await createFolderStructureWithServiceAccount(userId);
 
     console.log(`✅ [DRIVE SETUP API] Month folder created: ${monthFolderId}`);
 

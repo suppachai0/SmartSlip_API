@@ -434,3 +434,121 @@ export async function uploadToUserGoogleDrive(
     throw new Error(`Failed to upload to user Google Drive: ${error?.message}`);
   }
 }
+
+/**
+ * ==========================================
+ * SERVICE ACCOUNT FUNCTIONS (Phase 3)
+ * For creating folder structure automatically
+ * without requiring user authorization
+ * ==========================================
+ */
+
+/**
+ * Create folder structure using Service Account
+ * Structure: SmartSlip / [userId] / Receipts / [Year] / [Month]
+ * 
+ * @param userId - User ID from database
+ * @param userName - Optional: User name for display
+ * @returns Folder ID for current month's receipts
+ */
+export async function createFolderStructureWithServiceAccount(
+  userId: string,
+  userName?: string
+): Promise<string> {
+  try {
+    const now = new Date();
+    const year = now.getFullYear().toString();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+
+    console.log(`📂 [SERVICE ACCOUNT] Creating folder structure for user: ${userId}`);
+
+    // Step 1: Find or create root "SmartSlip" folder using Service Account
+    let smartslipFolderId = await findOrCreateFolderWithServiceAccount(
+      'SmartSlip',
+      'root'
+    );
+    console.log(`✓ [SERVICE ACCOUNT] SmartSlip folder: ${smartslipFolderId}`);
+
+    // Step 2: Find or create user folder
+    const userFolderName = userName || userId;
+    let userFolderId = await findOrCreateFolderWithServiceAccount(
+      userFolderName,
+      smartslipFolderId
+    );
+    console.log(`✓ [SERVICE ACCOUNT] User folder (${userFolderName}): ${userFolderId}`);
+
+    // Step 3: Find or create "Receipts" folder
+    let receiptsFolderId = await findOrCreateFolderWithServiceAccount(
+      'Receipts',
+      userFolderId
+    );
+    console.log(`✓ [SERVICE ACCOUNT] Receipts folder: ${receiptsFolderId}`);
+
+    // Step 4: Find or create year folder
+    let yearFolderId = await findOrCreateFolderWithServiceAccount(
+      year,
+      receiptsFolderId
+    );
+    console.log(`✓ [SERVICE ACCOUNT] Year folder (${year}): ${yearFolderId}`);
+
+    // Step 5: Find or create month folder
+    const monthName = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleString(
+      'en-US',
+      { month: 'long', year: 'numeric' }
+    );
+    let monthFolderId = await findOrCreateFolderWithServiceAccount(
+      `${month}-${monthName}`,
+      yearFolderId
+    );
+    console.log(`✓ [SERVICE ACCOUNT] Month folder (${month}-${monthName}): ${monthFolderId}`);
+
+    return monthFolderId;
+  } catch (error) {
+    console.error('❌ [SERVICE ACCOUNT] Failed to create folder structure:', error);
+    throw new Error(`Failed to create folder structure with Service Account: ${error}`);
+  }
+}
+
+/**
+ * Helper: Find existing folder or create new one using Service Account
+ * @param folderName - Name of folder to find/create
+ * @param parentId - Parent folder ID (or 'root')
+ */
+async function findOrCreateFolderWithServiceAccount(
+  folderName: string,
+  parentId: string = 'root'
+): Promise<string> {
+  try {
+    // Search for existing folder
+    const query = `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    
+    const response = await drive.files.list({
+      q: query,
+      spaces: 'drive',
+      pageSize: 1,
+      fields: 'files(id)',
+      supportsAllDrives: true,
+    } as any);
+
+    if (response.data.files && response.data.files.length > 0) {
+      return response.data.files[0].id || '';
+    }
+
+    // Folder doesn't exist, create it
+    console.log(`  [SERVICE ACCOUNT] Creating folder: "${folderName}"`);
+    const createResponse = await drive.files.create({
+      requestBody: {
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentId],
+      },
+      fields: 'id',
+      supportsAllDrives: true,
+    } as any);
+
+    return createResponse.data.id || '';
+  } catch (error) {
+    console.error(`❌ [SERVICE ACCOUNT] Error with folder "${folderName}":`, error);
+    throw error;
+  }
+}
