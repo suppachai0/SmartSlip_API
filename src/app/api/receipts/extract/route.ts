@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import User from '@/models/User';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage';
 import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
@@ -97,7 +98,14 @@ export async function POST(request: NextRequest) {
     // Step 6: Connect to MongoDB
     await connectToDatabase();
     console.log('โ… [EXTRACT API] MongoDB connected');
-
+    // Step 6a: Get user's Google Drive folder ID (for uploading files to user folder)
+    const user = await User.findById(userId);
+    const userFolderId = user?.googleDriveFolderId;
+    if (userFolderId) {
+      console.log(`๐"‚ [EXTRACT API] Using user's Google Drive folder: ${userFolderId}`);
+    } else {
+      console.warn('โ ๏ธ [EXTRACT API] User has no Google Drive folder setup yet (will upload to root)');
+    }
     // Step 7: Extract data with Gemini
     console.log('๐ค– [EXTRACT API] Starting Gemini extraction...');
     const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
@@ -138,7 +146,8 @@ export async function POST(request: NextRequest) {
       const driveResult = await uploadToGoogleDriveWithRetry(
         imageBuffer,
         `receipt-${slipData.amount}-${timestamp}.jpg`,
-        imageFile.type
+        imageFile.type,
+        userFolderId  // ← Pass user's folder ID to upload file to user's folder
       );
       driveFileId = driveResult.fileId;
       console.log('[EXTRACT API] Google Drive upload successful:', driveFileId);

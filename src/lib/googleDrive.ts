@@ -65,13 +65,19 @@ export interface GoogleDriveUploadResult {
 
 /**
  * Upload buffer to Google Drive with retry logic
+ * @param fileBuffer - File buffer to upload
+ * @param fileName - Name of the file
+ * @param mimeType - MIME type of the file
+ * @param folderId - Optional: Folder ID to upload to (if not provided, uploads to root)
  */
 export async function uploadToGoogleDriveWithRetry(
   fileBuffer: Buffer,
   fileName: string,
-  mimeType: string = 'image/jpeg'
+  mimeType: string = 'image/jpeg',
+  folderId?: string
 ): Promise<GoogleDriveUploadResult> {
-  console.log(`📤 Uploading to Google Drive (Root): ${fileName} (${fileBuffer.length} bytes)`);
+  const uploadLocation = folderId ? `Folder: ${folderId}` : 'Root';
+  console.log(`📤 Uploading to Google Drive (${uploadLocation}): ${fileName} (${fileBuffer.length} bytes)`);
 
   // Check file size (Google Drive limit is 5TB per file, but consider API timeout)
   if (fileBuffer.length > 100 * 1024 * 1024) {
@@ -81,11 +87,17 @@ export async function uploadToGoogleDriveWithRetry(
   try {
     const result = await retryOnSpecificErrors(
       async () => {
-        // Create file metadata - uploading to root drive (no folder specified)
-        const fileMetadata = {
+        // Create file metadata - with optional folder parent
+        const fileMetadata: any = {
           name: fileName,
           mimeType,
         };
+        
+        // If folderId provided, set it as parent folder
+        if (folderId) {
+          fileMetadata.parents = [folderId];
+          console.log(`📂 Uploading to folder: ${folderId}`);
+        }
 
         console.log('📝 Creating file metadata...');
 
@@ -236,210 +248,9 @@ export async function cleanupOldFiles(
 
 /**
  * ==========================================
- * USER OAUTH TOKEN FUNCTIONS (Phase 2)
- * For uploading files to user's own Google Drive
- * ==========================================
- */
-
-/**
- * Initialize Google Drive API with user's OAuth token
- * @param accessToken - User's Google OAuth access token
- */
-function getDriveWithUserAuth(accessToken: string) {
-  return google.drive({
-    version: 'v3',
-    auth: {
-      credentials: {
-        access_token: accessToken,
-      },
-    } as any,
-  });
-}
-
-/**
- * Get or create folder structure in user's Google Drive
- * Structure: SmartSlip / [userId] / Receipts / [Year] / [Month]
- * 
- * @param accessToken - User's Google OAuth access token
- * @param userId - User ID from database
- * @param userName - Optional: User name for display
- * @returns Folder ID for current month's receipts
- */
-export async function getUserMonthFolder(
-  userId: string,
-  accessToken: string,
-  userName?: string
-): Promise<string> {
-  try {
-    const userDrive = getDriveWithUserAuth(accessToken);
-    const now = new Date();
-    const year = now.getFullYear().toString();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-
-    console.log(`📂 Creating/Finding folder structure for user: ${userId}`);
-
-    // Step 1: Find or create root "SmartSlip" folder
-    let smartslipFolderId = await findOrCreateFolder(
-      userDrive,
-      'SmartSlip',
-      'root'
-    );
-    console.log(`✓ SmartSlip folder: ${smartslipFolderId}`);
-
-    // Step 2: Find or create user folder
-    const userFolderName = userName || userId;
-    let userFolderId = await findOrCreateFolder(
-      userDrive,
-      userFolderName,
-      smartslipFolderId
-    );
-    console.log(`✓ User folder (${userFolderName}): ${userFolderId}`);
-
-    // Step 3: Find or create "Receipts" folder
-    let receiptsFolderId = await findOrCreateFolder(
-      userDrive,
-      'Receipts',
-      userFolderId
-    );
-    console.log(`✓ Receipts folder: ${receiptsFolderId}`);
-
-    // Step 4: Find or create year folder
-    let yearFolderId = await findOrCreateFolder(
-      userDrive,
-      year,
-      receiptsFolderId
-    );
-    console.log(`✓ Year folder (${year}): ${yearFolderId}`);
-
-    // Step 5: Find or create month folder
-    const monthName = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleString(
-      'en-US',
-      { month: 'long', year: 'numeric' }
-    );
-    let monthFolderId = await findOrCreateFolder(
-      userDrive,
-      `${month}-${monthName}`,
-      yearFolderId
-    );
-    console.log(`✓ Month folder (${month}-${monthName}): ${monthFolderId}`);
-
-    return monthFolderId;
-  } catch (error) {
-    console.error('❌ Failed to get/create month folder:', error);
-    throw new Error(`Failed to get/create Google Drive folder: ${error}`);
-  }
-}
-
-/**
- * Helper: Find existing folder or create new one
- * @param drive - Google Drive API instance
- * @param folderName - Name of folder to find/create
- * @param parentId - Parent folder ID (or 'root')
- */
-async function findOrCreateFolder(
-  drive: any,
-  folderName: string,
-  parentId: string = 'root'
-): Promise<string> {
-  try {
-    // Search for existing folder
-    const query = `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-    
-    const response = await drive.files.list({
-      q: query,
-      spaces: 'drive',
-      pageSize: 1,
-      fields: 'files(id)',
-    });
-
-    if (response.data.files && response.data.files.length > 0) {
-      return response.data.files[0].id;
-    }
-
-    // Folder doesn't exist, create it
-    console.log(`  Creating folder: "${folderName}"`);
-    const createResponse = await drive.files.create({
-      requestBody: {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [parentId],
-      },
-      fields: 'id',
-    });
-
-    return createResponse.data.id;
-  } catch (error) {
-    console.error(`❌ Error with folder "${folderName}":`, error);
-    throw error;
-  }
-}
-
-/**
- * Upload file to user's Google Drive (in their monthly receipts folder)
- * @param fileBuffer - File buffer to upload
- * @param fileName - Name of file
- * @param accessToken - User's Google OAuth access token
- * @param userId - User ID
- * @param mimeType - File MIME type
- */
-export async function uploadToUserGoogleDrive(
-  fileBuffer: Buffer,
-  fileName: string,
-  accessToken: string,
-  userId: string,
-  mimeType: string = 'image/jpeg'
-): Promise<GoogleDriveUploadResult> {
-  console.log(`📤 Uploading to user's Google Drive: ${fileName}`);
-
-  try {
-    const userDrive = getDriveWithUserAuth(accessToken);
-
-    // Get the month folder
-    const monthFolderId = await getUserMonthFolder(userId, accessToken);
-
-    // Upload file to month folder
-    const response = await userDrive.files.create({
-      requestBody: {
-        name: fileName,
-        mimeType,
-        parents: [monthFolderId],
-      },
-      media: {
-        mimeType,
-        body: require('stream').Readable.from([fileBuffer]),
-      },
-      fields: 'id, webViewLink, webContentLink',
-    });
-
-    const fileId = response.data.id;
-    if (!fileId) {
-      throw new Error('Failed to get file ID from Google Drive');
-    }
-
-    const publicLink = `https://drive.google.com/uc?id=${fileId}&export=view`;
-
-    console.log('✅ File uploaded to user drive successfully');
-    console.log(`   File ID: ${fileId}`);
-    console.log(`   Link: ${publicLink}`);
-
-    return {
-      fileId,
-      webViewLink: response.data.webViewLink || publicLink,
-      publicLink,
-      size: fileBuffer.length,
-      uploadedAt: new Date().toISOString(),
-    };
-  } catch (error: any) {
-    console.error('❌ User drive upload failed:', error);
-    throw new Error(`Failed to upload to user Google Drive: ${error?.message}`);
-  }
-}
-
-/**
- * ==========================================
- * SERVICE ACCOUNT FUNCTIONS (Phase 3)
- * For creating folder structure automatically
- * without requiring user authorization
+ * SERVICE ACCOUNT FUNCTIONS
+ * All Google Drive operations use Service Account
+ * No user authorization required
  * ==========================================
  */
 
