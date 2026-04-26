@@ -11,7 +11,7 @@
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
-    "@line/bot-sdk": "^10.6.0",
+    "@line/bot-sdk": "^11.0.0",
     "googleapis": "^171.4.0",
     "mongoose": "^9.2.4",
     "next": "16.1.6",
