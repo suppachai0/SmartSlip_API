@@ -7,6 +7,7 @@ import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -246,6 +247,85 @@ async function processReceiptInBackground(
 }
 
 /**
+ * Answer receipt/finance questions using Gemini AI with user's receipt data as context
+ */
+async function answerReceiptQuestion(
+  userId: string,
+  question: string,
+  replyToken: string
+): Promise<void> {
+  try {
+    console.log(`🤖 [CHATBOT] Answering question for user ${userId}: ${question}`);
+    await connectToDatabase();
+
+    // Fetch user's recent receipts
+    const receipts = await Receipt.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('storeName amount currency issueDate items status createdAt');
+
+    if (receipts.length === 0) {
+      await sendLineReply(replyToken, [
+        {
+          type: 'text',
+          text: '📋 ยังไม่มีใบเสร็จในระบบ\n\nลองส่งรูปถ่ายใบเสร็จมาก่อนนะครับ แล้วค่อยถามข้อมูล 😊',
+        },
+      ]);
+      return;
+    }
+
+    // Calculate summaries
+    const today = new Date();
+    const thisMonth = receipts.filter((r) => {
+      const d = new Date(r.issueDate);
+      return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    });
+    const totalAmount = receipts.reduce((sum, r) => sum + r.amount, 0);
+    const thisMonthTotal = thisMonth.reduce((sum, r) => sum + r.amount, 0);
+
+    const receiptSummary = receipts.slice(0, 15).map((r) => ({
+      ร้าน: r.storeName,
+      จำนวนเงิน: `฿${r.amount}`,
+      วันที่: new Date(r.issueDate).toLocaleDateString('th-TH'),
+      รายการ: r.items?.map((i: any) => `${i.description} x${i.quantity} ฿${i.totalPrice}`).join(', ') || '-',
+    }));
+
+    const prompt = `คุณเป็น AI assistant ช่วยวิเคราะห์ใบเสร็จและข้อมูลการเงินส่วนตัว ตอบเป็นภาษาไทย กระชับ ชัดเจน
+
+ข้อมูลสรุปของผู้ใช้:
+- ใบเสร็จทั้งหมด: ${receipts.length} ใบ
+- ยอดรวมทั้งหมด: ฿${totalAmount.toFixed(2)}
+- ยอดเดือนนี้: ฿${thisMonthTotal.toFixed(2)} (${thisMonth.length} ใบ)
+
+ใบเสร็จล่าสุด 15 รายการ:
+${JSON.stringify(receiptSummary, null, 2)}
+
+คำถาม: ${question}
+
+กฎ:
+- ตอบเฉพาะเรื่องใบเสร็จ ค่าใช้จ่าย และการเงินส่วนตัวเท่านั้น
+- ถ้าคำถามไม่เกี่ยวกับการเงิน/ใบเสร็จ ให้บอกว่าตอบได้เฉพาะเรื่องใบเสร็จ
+- ใช้ emoji ประกอบเพื่อให้อ่านง่าย`;
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+    const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await chatModel.generateContent(prompt);
+    const answer = result.response.text();
+
+    console.log(`✅ [CHATBOT] Answer generated (${answer.length} chars)`);
+    await sendLineReply(replyToken, [{ type: 'text', text: answer }]);
+  } catch (error: any) {
+    console.error('❌ [CHATBOT] Error:', error);
+    await sendLineReply(replyToken, [
+      {
+        type: 'text',
+        text: '❌ ขอโทษ ไม่สามารถตอบได้ตอนนี้ ลองใหม่อีกครั้งนะครับ',
+      },
+    ]);
+  }
+}
+
+/**
  * Process LINE webhook events
  * Handles image messages with OCR extraction and storage
  */
@@ -256,18 +336,26 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     return;
   }
 
-  // Only handle image messages
-  if (event.message.type !== 'image') {
-    console.log(`📝 Non-image message received: ${event.message.type}`);
+  // Handle text messages as chatbot Q&A
+  if (event.message.type === 'text') {
+    const userId = event.source.userId;
+    const text = (event.message as line.TextEventMessage).text;
+    console.log(`💬 Text message from ${userId}: ${text}`);
+    if (userId) {
+      await answerReceiptQuestion(userId, text, event.replyToken);
+    }
+    return;
+  }
 
-    // Send text reply for non-image messages
+  // Only handle image messages (for receipt scanning)
+  if (event.message.type !== 'image') {
+    console.log(`📝 Unsupported message type: ${event.message.type}`);
     await sendLineReply(event.replyToken, [
       {
         type: 'text',
-        text: '📸 ขอโทษด้วย! กรุณาส่งรูปภาพใบเสร็จ\n\n📤 ฉันจะทำการ:\n1. อัตราแลกเปลี่ยน OCR ด้วย Gemini AI\n2. วิเคราะห์ข้อมูลและส่งกลับมา\n3. เก็บข้อมูลในฐานข้อมูล',
+        text: '📸 ส่งรูปใบเสร็จเพื่อสแกน หรือพิมพ์ถามเกี่ยวกับค่าใช้จ่ายของคุณได้เลย!',
       },
     ]);
-
     return;
   }
 
