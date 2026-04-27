@@ -7,8 +7,8 @@ import { retryWithBackoff } from './retry';
  */
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-// Model fallback chain: try faster/newer model first, fallback to stable model
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+// Model fallback chain: gemini-2.0-flash removed (no free tier quota)
+const MODELS = ['gemini-2.5-flash', 'gemini-1.5-flash'];
 
 export interface SlipExtractionResult {
   amount: number;
@@ -87,8 +87,9 @@ If you cannot read critical data, return null for that field.`;
 
     } catch (error: any) {
       const is503 = error?.message?.includes('503') || error?.message?.includes('Service Unavailable') || error?.message?.includes('high demand');
-      if (is503 && modelName !== MODELS[MODELS.length - 1]) {
-        console.warn(`⚠️ ${modelName} unavailable (503), trying next model...`);
+      const is429 = error?.message?.includes('429') || error?.message?.includes('Too Many Requests') || error?.message?.includes('quota');
+      if ((is503 || is429) && modelName !== MODELS[MODELS.length - 1]) {
+        console.warn(`⚠️ ${modelName} unavailable (${is503 ? '503' : '429'}), trying next model...`);
         continue;
       }
       // Last model or non-503 error - give up
