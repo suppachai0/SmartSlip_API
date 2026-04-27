@@ -308,7 +308,7 @@ ${JSON.stringify(receiptSummary, null, 2)}
 - ใช้ emoji ประกอบเพื่อให้อ่านง่าย`;
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
     const result = await chatModel.generateContent(prompt);
     const answer = result.response.text();
 
