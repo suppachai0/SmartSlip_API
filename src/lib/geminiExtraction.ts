@@ -7,7 +7,8 @@ import { retryWithBackoff } from './retry';
  */
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+// Model fallback chain: try faster/newer model first, fallback to stable model
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
 export interface SlipExtractionResult {
   amount: number;
@@ -25,18 +26,16 @@ export interface SlipExtractionResult {
 }
 
 /**
- * Extract Thai bank slip data using Gemini with single fast prompt
+ * Extract Thai bank slip data using Gemini with model fallback on 503
  */
 export async function extractSlipDataWithGeminiFallback(
   imageBuffer: Buffer
 ): Promise<SlipExtractionResult> {
   console.log('🤖 Starting Gemini extraction...');
-  
+
   const base64Image = imageBuffer.toString('base64');
 
-  try {
-    // Simplified prompt for faster extraction
-    const prompt = `From this Thai receipt (ใบเสร็จ), extract ONLY these 4 fields:
+  const prompt = `From this Thai receipt (ใบเสร็จ), extract ONLY these 4 fields:
 1. Total amount (number)
 2. Shop/receiver name
 3. Customer/sender name  
@@ -53,57 +52,69 @@ Return ONLY this exact JSON structure:
 
 If you cannot read critical data, return null for that field.`;
 
-    console.log('📝 Calling Gemini API...');
+  // Try each model in order until one succeeds
+  for (const modelName of MODELS) {
+    try {
+      console.log(`📝 Trying model: ${modelName}`);
+      const model = genAI.getGenerativeModel({ model: modelName });
 
-    const result = await retryWithBackoff(
-      async () => {
-        return await model.generateContent([
-          {
-            inlineData: {
-              data: base64Image,
-              mimeType: 'image/jpeg',
-            },
-          },
-          {
-            text: prompt,
-          },
-        ]);
-      },
-      {
-        maxAttempts: 2,
-        initialDelayMs: 1000,
-        timeoutMs: 10000, // Gemini API timeout - increased to handle complex receipts
-        onRetry: (attempt, error) => {
-          console.warn(`⚠️ Retry ${attempt}: ${error?.message}`);
+      const result = await retryWithBackoff(
+        async () => {
+          return await model.generateContent([
+            { inlineData: { data: base64Image, mimeType: 'image/jpeg' } },
+            { text: prompt },
+          ]);
         },
+        {
+          maxAttempts: 2,
+          initialDelayMs: 1000,
+          timeoutMs: 15000,
+          onRetry: (attempt, error) => {
+            console.warn(`⚠️ Retry ${attempt} on ${modelName}: ${error?.message}`);
+          },
+        }
+      );
+
+      const responseText = result.response.text();
+      console.log(`✅ Gemini response from ${modelName} (${responseText.length} chars)`);
+
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON found in response');
+
+      const extractedData = JSON.parse(jsonMatch[0]);
+      console.log('✅ Extraction successful');
+      return formatResult(extractedData, 'high', 'gemini_standard');
+
+    } catch (error: any) {
+      const is503 = error?.message?.includes('503') || error?.message?.includes('Service Unavailable') || error?.message?.includes('high demand');
+      if (is503 && modelName !== MODELS[MODELS.length - 1]) {
+        console.warn(`⚠️ ${modelName} unavailable (503), trying next model...`);
+        continue;
       }
-    );
-
-    const responseText = result.response.text();
-    console.log(`✅ Gemini response received (${responseText.length} chars)`);
-
-    // Parse JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response');
+      // Last model or non-503 error - give up
+      console.error('❌ Extraction failed:', error);
+      return {
+        amount: 0,
+        sender: 'Unknown',
+        receiver: 'Unknown',
+        date: new Date().toISOString().split('T')[0],
+        items: undefined,
+        confidence: 'low',
+        method: 'manual_required',
+      };
     }
-
-    const extractedData = JSON.parse(jsonMatch[0]);
-    console.log('✅ Extraction successful');
-    
-    return formatResult(extractedData, 'high', 'gemini_standard');
-  } catch (error) {
-    console.error('❌ Extraction failed:', error);
-    return {
-      amount: 0,
-      sender: 'Unknown',
-      receiver: 'Unknown',
-      date: new Date().toISOString().split('T')[0],
-      items: undefined,
-      confidence: 'low',
-      method: 'manual_required',
-    };
   }
+
+  // Should not reach here
+  return {
+    amount: 0,
+    sender: 'Unknown',
+    receiver: 'Unknown',
+    date: new Date().toISOString().split('T')[0],
+    items: undefined,
+    confidence: 'low',
+    method: 'manual_required',
+  };
 }
 
 
