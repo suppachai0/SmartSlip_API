@@ -7,9 +7,8 @@ import { retryWithBackoff } from './retry';
  */
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-// gemini-1.5-flash-latest: 1500 req/day free tier, gemini-2.5-flash: 20 req/day
-// Note: use 'gemini-1.5-flash-latest' not 'gemini-1.5-flash' for v1beta API compatibility
-const MODELS = ['gemini-1.5-flash-latest', 'gemini-1.5-flash-8b', 'gemini-2.5-flash'];
+// gemini-2.0-flash-lite: free tier ~1500 req/day, gemini-2.5-flash-lite: newer free tier
+const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 
 export interface SlipExtractionResult {
   amount: number;
