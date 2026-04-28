@@ -590,7 +590,7 @@ export async function POST(request: NextRequest) {
         // Wait for all events to process (or timeout after 25 seconds)
         // Gemini API can take 10s + image download + other operations
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Processing timeout')), 25000)
+          setTimeout(() => reject(new Error('Processing timeout')), 55000)
         );
 
         try {

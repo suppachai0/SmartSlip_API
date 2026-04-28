@@ -68,7 +68,7 @@ If you cannot read critical data, return null for that field.`;
         {
           maxAttempts: 2,
           initialDelayMs: 1000,
-          timeoutMs: 15000,
+          timeoutMs: 25000,
           onRetry: (attempt, error) => {
             console.warn(`⚠️ Retry ${attempt} on ${modelName}: ${error?.message}`);
           },
