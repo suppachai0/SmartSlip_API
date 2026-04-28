@@ -5,9 +5,11 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
+import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import User from '@/models/User';
 
 // Initialize LINE client
 const lineClient = new line.Client({
@@ -149,6 +151,28 @@ async function processReceiptInBackground(
     const storageResult = await uploadToCloudStorage(imageBuffer, fileName, 'image/jpeg');
     console.log('✅ [BG] Cloud Storage upload complete:', storageResult.publicUrl);
 
+    // Step 3.5: Upload to user's Google Drive (if connected)
+    let driveFileId: string | undefined;
+    try {
+      const user = await User.findOne({ lineUserId: userId }).select('googleDriveFolderId');
+      if (user?.googleDriveFolderId) {
+        console.log('📂 [BG] Uploading to user Google Drive folder...');
+        const driveFileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
+        const driveResult = await uploadToGoogleDriveWithRetry(
+          imageBuffer,
+          driveFileName,
+          'image/jpeg',
+          user.googleDriveFolderId
+        );
+        driveFileId = driveResult.fileId;
+        console.log('✅ [BG] Google Drive upload complete:', driveResult.webViewLink);
+      } else {
+        console.log('ℹ️ [BG] User has no Google Drive folder connected, skipping Drive upload');
+      }
+    } catch (driveError) {
+      console.warn('⚠️ [BG] Google Drive upload failed (non-fatal):', driveError);
+    }
+
     // Step 4: Save to MongoDB
     console.log('💾 [BG] Saving to MongoDB...');
     const transactionId = `LINE-${userId}-${Date.now()}`;
@@ -169,7 +193,7 @@ async function processReceiptInBackground(
       extractedReceiver: slipData.receiver,
       issueDate: new Date(slipData.date),
       items: slipData.items || [],
-      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}`,
+      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}${driveFileId ? ` | DriveFileId: ${driveFileId}` : ''}`,
     });
 
     const receiptId = newReceipt._id.toString();
@@ -213,7 +237,7 @@ async function processReceiptInBackground(
 
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}`,
+      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}${driveFileId ? '\n\n📂 บันทึกใน Google Drive แล้ว ✅' : ''}`,
     });
 
     console.log('✅ [BG] DetailedResult sent via pushMessage');
