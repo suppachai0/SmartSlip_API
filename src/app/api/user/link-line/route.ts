@@ -34,37 +34,18 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
-    // Check if lineUserId is already used by another account
-    const existing = await User.findOne({ lineUserId, _id: { $ne: userId } });
-    if (existing) {
-      // Already linked - copy googleDriveFolderId to the LINE account if needed
-      if (!existing.googleDriveFolderId) {
-        const sourceUser = await User.findById(userId).select('googleDriveFolderId');
-        if (sourceUser?.googleDriveFolderId) {
-          await User.findByIdAndUpdate(existing._id, {
-            googleDriveFolderId: sourceUser.googleDriveFolderId,
-          });
-        }
-      }
-      return corsResponse(
-        { success: true, message: 'LINE account already linked', lineUserId },
-        200,
-        request
-      );
-    }
+    // Get googleDriveFolderId from the web account (identified by userId)
+    const webUser = await User.findById(userId).select('googleDriveFolderId');
+    const googleDriveFolderId = webUser?.googleDriveFolderId;
 
-    // Update the current web user's document to include lineUserId
-    const updated = await User.findByIdAndUpdate(
-      userId,
+    // Upsert: find by lineUserId and set googleDriveFolderId (create if not exists)
+    const updated = await User.findOneAndUpdate(
       { lineUserId },
-      { new: true }
+      { lineUserId, ...(googleDriveFolderId && { googleDriveFolderId }) },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
     ).select('lineUserId googleDriveFolderId');
 
-    if (!updated) {
-      return corsResponse({ error: 'User not found' }, 404, request);
-    }
-
-    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId} to user ${userId}`);
+    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}`);
 
     return corsResponse(
       {
