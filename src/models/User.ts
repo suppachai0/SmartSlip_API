@@ -16,6 +16,7 @@ export interface IUser extends Document {
   googleRefreshToken?: string;
   googleTokenExpiry?: Date;
   googleDriveFolderId?: string; // SmartSlip/[userId]/Receipts folder
+  googleSheetId?: string; // User's personal Google Sheet
   
   lastLoginAt?: Date;
   createdAt: Date;
@@ -39,6 +40,7 @@ const userSchema = new Schema<IUser>(
     googleRefreshToken: String,
     googleTokenExpiry: Date,
     googleDriveFolderId: String,
+    googleSheetId: String,
     
     lastLoginAt: Date,
   },

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return corsResponse({ error: 'Invalid JSON body' }, 400, request);
     }
 
-    const { userId, lineUserId } = body;
+    const { userId, lineUserId, googleDriveFolderId: bodyFolderId, googleSheetId } = body;
 
     if (!userId || !lineUserId) {
       return corsResponse({ error: 'Missing required fields: userId, lineUserId' }, 400, request);
@@ -34,18 +34,23 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
-    // Get googleDriveFolderId from the web account (identified by userId)
-    const webUser = await User.findById(userId).select('googleDriveFolderId');
-    const googleDriveFolderId = webUser?.googleDriveFolderId;
+    // Get googleDriveFolderId from body or fall back to the web account's stored value
+    const webUser = await User.findById(userId).select('googleDriveFolderId googleSheetId');
+    const googleDriveFolderId = bodyFolderId || webUser?.googleDriveFolderId;
+    const resolvedSheetId = googleSheetId || webUser?.googleSheetId;
 
     // Upsert: find by lineUserId and set googleDriveFolderId (create if not exists)
     const updated = await User.findOneAndUpdate(
       { lineUserId },
-      { lineUserId, ...(googleDriveFolderId && { googleDriveFolderId }) },
+      {
+        lineUserId,
+        ...(googleDriveFolderId && { googleDriveFolderId }),
+        ...(resolvedSheetId && { googleSheetId: resolvedSheetId }),
+      },
       { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).select('lineUserId googleDriveFolderId');
+    ).select('lineUserId googleDriveFolderId googleSheetId');
 
-    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}`);
+    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}, hasSheet: ${!!updated?.googleSheetId}`);
 
     return corsResponse(
       {
@@ -53,6 +58,7 @@ export async function POST(request: NextRequest) {
         message: 'LINE account linked successfully',
         lineUserId: updated.lineUserId,
         hasDriveFolder: !!updated.googleDriveFolderId,
+        hasSheet: !!updated.googleSheetId,
       },
       200,
       request

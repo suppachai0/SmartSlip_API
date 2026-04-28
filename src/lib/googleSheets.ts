@@ -36,12 +36,13 @@ export interface AppendReceiptRowPayload {
   status?: string;
   confidence?: string;
   timestamp?: Date | string;
+  spreadsheetId?: string; // User's personal sheet; falls back to GOOGLE_SHEETS_ID
 }
 
 export async function appendReceiptToSheet(
   payload: AppendReceiptRowPayload
 ): Promise<void> {
-  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+  const spreadsheetId = payload.spreadsheetId || process.env.GOOGLE_SHEETS_ID;
   const tabName = process.env.GOOGLE_SHEETS_TAB || 'Receipts';
 
   if (!spreadsheetId) {

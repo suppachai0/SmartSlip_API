@@ -153,8 +153,10 @@ async function processReceiptInBackground(
 
     // Step 3.5: Upload to user's Google Drive (if connected)
     let driveFileId: string | undefined;
+    let userGoogleSheetId: string | undefined;
     try {
-      const user = await User.findOne({ lineUserId: userId }).select('googleDriveFolderId');
+      const user = await User.findOne({ lineUserId: userId }).select('googleDriveFolderId googleSheetId');
+      userGoogleSheetId = user?.googleSheetId ?? undefined;
       if (user?.googleDriveFolderId) {
         console.log('📂 [BG] Uploading to user Google Drive folder...');
         const driveFileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
@@ -211,6 +213,7 @@ async function processReceiptInBackground(
         status: newReceipt.status,
         confidence: slipData.confidence,
         timestamp: newReceipt.createdAt,
+        spreadsheetId: userGoogleSheetId,
       });
     } catch (sheetError) {
       console.error('⚠️ [BG] Failed to append receipt to Google Sheets:', sheetError);
