@@ -265,12 +265,27 @@ async function answerReceiptQuestion(
       .select('storeName amount currency issueDate items status createdAt');
 
     if (receipts.length === 0) {
-      await sendLineReply(replyToken, [
-        {
-          type: 'text',
-          text: '📋 ยังไม่มีใบเสร็จในระบบ\n\nลองส่งรูปถ่ายใบเสร็จมาก่อนนะครับ แล้วค่อยถามข้อมูล 😊',
-        },
-      ]);
+      // Still allow questions about the app even with no receipts
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+      const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+      const noReceiptPrompt = `คุณคือ SmartSlip AI Assistant ตอบเป็นภาษาไทย กระชับ ใช้ emoji
+
+=== ข้อมูลเกี่ยวกับ SmartSlip ===
+SmartSlip คือแอปพลิเคชันจัดการใบเสร็จและค่าใช้จ่ายอัจฉริยะ
+- 📸 สแกนใบเสร็จ: ส่งรูปใบเสร็จมาใน LINE Bot นี้ได้เลย ระบบจะอ่านข้อมูลอัตโนมัติด้วย AI
+- ☁️ เก็บบนคลาวด์: ใบเสร็จทุกใบถูกเก็บบน Google Cloud Storage อย่างปลอดภัย
+- 📊 Google Sheets: ข้อมูลทุกใบเสร็จถูกบันทึกลง Google Sheets อัตโนมัติ
+- 💬 LINE Bot: ส่งรูปใบเสร็จหรือถามคำถามเกี่ยวกับค่าใช้จ่ายผ่าน LINE ได้เลย
+- 🤖 AI OCR: ใช้ Google Gemini AI อ่านและวิเคราะห์ใบเสร็จ
+- วิธีใช้: ส่งรูปใบเสร็จมาใน LINE นี้ได้เลย
+
+ผู้ใช้ยังไม่มีใบเสร็จในระบบ
+
+คำถาม: ${question}
+
+กฎ: ตอบได้เรื่อง SmartSlip แอป วิธีใช้งาน และแนะนำให้ส่งรูปใบเสร็จเพื่อเริ่มใช้งาน`;
+      const result = await chatModel.generateContent(noReceiptPrompt);
+      await sendLineReply(replyToken, [{ type: 'text', text: result.response.text() }]);
       return;
     }
 
@@ -290,9 +305,19 @@ async function answerReceiptQuestion(
       รายการ: r.items?.map((i: any) => `${i.description} x${i.quantity} ฿${i.totalPrice}`).join(', ') || '-',
     }));
 
-    const prompt = `คุณเป็น AI assistant ช่วยวิเคราะห์ใบเสร็จและข้อมูลการเงินส่วนตัว ตอบเป็นภาษาไทย กระชับ ชัดเจน
+    const prompt = `คุณคือ SmartSlip AI Assistant ผู้ช่วยอัจฉริยะของแอป SmartSlip ตอบเป็นภาษาไทย กระชับ ชัดเจน ใช้ emoji ประกอบ
 
-ข้อมูลสรุปของผู้ใช้:
+=== ข้อมูลเกี่ยวกับ SmartSlip ===
+SmartSlip คือแอปพลิเคชันจัดการใบเสร็จและค่าใช้จ่ายอัจฉริยะ
+- 📸 สแกนใบเสร็จ: ส่งรูปใบเสร็จมาใน LINE Bot นี้ได้เลย ระบบจะอ่านข้อมูลอัตโนมัติด้วย AI
+- ☁️ เก็บบนคลาวด์: ใบเสร็จทุกใบถูกเก็บบน Google Cloud Storage อย่างปลอดภัย
+- 📊 Google Sheets: ข้อมูลทุกใบเสร็จถูกบันทึกลง Google Sheets อัตโนมัติ
+- 🗄️ MongoDB: เก็บข้อมูลในฐานข้อมูล MongoDB
+- 💬 LINE Bot: ส่งรูปใบเสร็จหรือถามคำถามเกี่ยวกับค่าใช้จ่ายผ่าน LINE ได้เลย
+- 🤖 AI OCR: ใช้ Google Gemini AI อ่านและวิเคราะห์ใบเสร็จ ดึงข้อมูล ชื่อร้าน ยอดเงิน วันที่ สินค้า
+- วิธีใช้: ส่งรูปใบเสร็จมาใน LINE นี้ได้เลย หรือพิมพ์ถามสรุปค่าใช้จ่าย
+
+=== ข้อมูลค่าใช้จ่ายของคุณ ===
 - ใบเสร็จทั้งหมด: ${receipts.length} ใบ
 - ยอดรวมทั้งหมด: ฿${totalAmount.toFixed(2)}
 - ยอดเดือนนี้: ฿${thisMonthTotal.toFixed(2)} (${thisMonth.length} ใบ)
@@ -303,12 +328,11 @@ ${JSON.stringify(receiptSummary, null, 2)}
 คำถาม: ${question}
 
 กฎ:
-- ตอบเฉพาะเรื่องใบเสร็จ ค่าใช้จ่าย และการเงินส่วนตัวเท่านั้น
-- ถ้าคำถามไม่เกี่ยวกับการเงิน/ใบเสร็จ ให้บอกว่าตอบได้เฉพาะเรื่องใบเสร็จ
-- ใช้ emoji ประกอบเพื่อให้อ่านง่าย`;
+- ตอบได้ทั้งเรื่อง SmartSlip แอป วิธีใช้งาน ฟีเจอร์ต่างๆ และเรื่องใบเสร็จ ค่าใช้จ่ายของผู้ใช้
+- ถ้าถามนอกเหนือจากนี้ ให้บอกสุภาพว่าตอบได้เฉพาะเรื่อง SmartSlip และค่าใช้จ่าย`;
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
     const result = await chatModel.generateContent(prompt);
     const answer = result.response.text();
 
