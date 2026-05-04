@@ -43,7 +43,6 @@ export async function appendReceiptToSheet(
   payload: AppendReceiptRowPayload
 ): Promise<void> {
   const spreadsheetId = payload.spreadsheetId || process.env.GOOGLE_SHEETS_ID;
-  const tabName = process.env.GOOGLE_SHEETS_TAB || 'Receipts';
 
   if (!spreadsheetId) {
     console.warn('[Sheets] GOOGLE_SHEETS_ID not configured, skipping append');
@@ -52,6 +51,22 @@ export async function appendReceiptToSheet(
 
   try {
     const sheets = getSheetsClient();
+
+    // If using user's personal sheet, auto-detect first tab name
+    // so it works regardless of language/naming ("Sheet 1", "ชีต1", etc.)
+    let tabName = process.env.GOOGLE_SHEETS_TAB || 'Sheet 1';
+    if (payload.spreadsheetId) {
+      try {
+        const meta = await sheets.spreadsheets.get({ spreadsheetId });
+        const firstSheet = meta.data.sheets?.[0]?.properties?.title;
+        if (firstSheet) {
+          tabName = firstSheet;
+          console.log(`[Sheets] Auto-detected tab name: "${tabName}"`);
+        }
+      } catch {
+        console.warn('[Sheets] Could not auto-detect tab name, using fallback:', tabName);
+      }
+    }
 
     const timestamp = payload.timestamp
       ? new Date(payload.timestamp)
@@ -83,7 +98,7 @@ export async function appendReceiptToSheet(
       requestBody: { values },
     });
 
-    console.log('[Sheets] Appended receipt row successfully');
+    console.log(`[Sheets] Appended receipt row to "${tabName}" successfully`);
   } catch (error) {
     console.error('[Sheets] Failed to append receipt row:', error);
     throw error;
