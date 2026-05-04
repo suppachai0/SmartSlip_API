@@ -21,7 +21,15 @@ export async function POST(request: NextRequest) {
       return corsResponse({ error: 'Invalid JSON body' }, 400, request);
     }
 
-    const { userId, lineUserId, googleDriveFolderId: bodyFolderId, googleSheetId } = body;
+    const {
+      userId,
+      lineUserId,
+      googleDriveFolderId: bodyFolderId,
+      googleSheetId,
+      googleAccessToken,
+      googleRefreshToken,
+      googleTokenExpiry,
+    } = body;
 
     if (!userId || !lineUserId) {
       return corsResponse({ error: 'Missing required fields: userId, lineUserId' }, 400, request);
@@ -39,6 +47,12 @@ export async function POST(request: NextRequest) {
     const googleDriveFolderId = bodyFolderId || webUser?.googleDriveFolderId;
     const resolvedSheetId = googleSheetId || webUser?.googleSheetId;
 
+    // Build token update fields if provided
+    const tokenFields: Record<string, unknown> = {};
+    if (googleAccessToken) tokenFields.googleAccessToken = googleAccessToken;
+    if (googleRefreshToken) tokenFields.googleRefreshToken = googleRefreshToken;
+    if (googleTokenExpiry) tokenFields.googleTokenExpiry = new Date(googleTokenExpiry);
+
     // Upsert: find by lineUserId and set googleDriveFolderId (create if not exists)
     const updated = await User.findOneAndUpdate(
       { lineUserId },
@@ -46,11 +60,12 @@ export async function POST(request: NextRequest) {
         lineUserId,
         ...(googleDriveFolderId && { googleDriveFolderId }),
         ...(resolvedSheetId && { googleSheetId: resolvedSheetId }),
+        ...tokenFields,
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).select('lineUserId googleDriveFolderId googleSheetId');
+    ).select('lineUserId googleDriveFolderId googleSheetId googleAccessToken');
 
-    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}, hasSheet: ${!!updated?.googleSheetId}`);
+    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}, hasSheet: ${!!updated?.googleSheetId}, hasGoogleToken: ${!!updated?.googleAccessToken}`);
 
     return corsResponse(
       {
