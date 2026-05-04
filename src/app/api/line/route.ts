@@ -5,9 +5,10 @@ import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
-import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
+import { uploadToGoogleDriveWithRetry, uploadToGoogleDriveAsUser } from '@/lib/googleDrive';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
+import { ensureValidToken } from '@/lib/googleOAuth';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import User from '@/models/User';
 
@@ -155,19 +156,41 @@ async function processReceiptInBackground(
     let driveFileId: string | undefined;
     let userGoogleSheetId: string | undefined;
     try {
-      const user = await User.findOne({ lineUserId: userId }).select('googleDriveFolderId googleSheetId');
+      const user = await User.findOne({ lineUserId: userId }).select(
+        'googleDriveFolderId googleSheetId googleAccessToken googleRefreshToken googleTokenExpiry'
+      );
       userGoogleSheetId = user?.googleSheetId ?? undefined;
       if (user?.googleDriveFolderId) {
         console.log('📂 [BG] Uploading to user Google Drive folder...');
         const driveFileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
-        const driveResult = await uploadToGoogleDriveWithRetry(
-          imageBuffer,
-          driveFileName,
-          'image/jpeg',
-          user.googleDriveFolderId
-        );
-        driveFileId = driveResult.fileId;
-        console.log('✅ [BG] Google Drive upload complete:', driveResult.webViewLink);
+
+        if (user.googleAccessToken) {
+          // Use user's own OAuth token — avoids Service Account storage quota error
+          const { accessToken } = await ensureValidToken(
+            user.googleTokenExpiry ?? new Date(0),
+            user.googleAccessToken,
+            user.googleRefreshToken
+          );
+          const driveResult = await uploadToGoogleDriveAsUser(
+            imageBuffer,
+            driveFileName,
+            'image/jpeg',
+            user.googleDriveFolderId,
+            accessToken
+          );
+          driveFileId = driveResult.fileId;
+          console.log('✅ [BG] Google Drive upload complete (user OAuth):', driveResult.webViewLink);
+        } else {
+          // Fallback to Service Account (may fail for personal Drive)
+          const driveResult = await uploadToGoogleDriveWithRetry(
+            imageBuffer,
+            driveFileName,
+            'image/jpeg',
+            user.googleDriveFolderId
+          );
+          driveFileId = driveResult.fileId;
+          console.log('✅ [BG] Google Drive upload complete (SA):', driveResult.webViewLink);
+        }
       } else {
         console.log('ℹ️ [BG] User has no Google Drive folder connected, skipping Drive upload');
       }

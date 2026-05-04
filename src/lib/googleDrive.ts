@@ -200,6 +200,46 @@ export async function uploadToGoogleDriveWithRetry(
 }
 
 /**
+ * Upload buffer to Google Drive using the end-user's OAuth access token.
+ * This avoids the "Service Accounts do not have storage quota" error when
+ * uploading to a user's personal Drive folder.
+ */
+export async function uploadToGoogleDriveAsUser(
+  fileBuffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  folderId: string,
+  accessToken: string
+): Promise<GoogleDriveUploadResult> {
+  console.log(`📤 [User Drive] Uploading ${fileName} to folder ${folderId} (${fileBuffer.length} bytes)`);
+
+  const oauth2Client = new google.auth.OAuth2();
+  oauth2Client.setCredentials({ access_token: accessToken });
+
+  const userDrive = google.drive({ version: 'v3', auth: oauth2Client });
+
+  const response = await userDrive.files.create({
+    requestBody: { name: fileName, mimeType, parents: [folderId] },
+    media: { mimeType, body: require('stream').Readable.from([fileBuffer]) },
+    fields: 'id, webViewLink',
+  });
+
+  const fileId = response.data.id;
+  if (!fileId) throw new Error('Failed to get file ID from Google Drive (user upload)');
+
+  const publicLink = `https://drive.google.com/uc?id=${fileId}&export=view`;
+  console.log(`✅ [User Drive] Uploaded: ${publicLink}`);
+
+  return {
+    fileId,
+    webViewLink: response.data.webViewLink || publicLink,
+    publicLink,
+    size: fileBuffer.length,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Batch cleanup old files (optional maintenance)
  */
 export async function cleanupOldFiles(
