@@ -239,11 +239,27 @@ export async function uploadToGoogleDriveAsUser(
 
   const userDrive = google.drive({ version: 'v3', auth: oauth2Client });
 
-  const response = await userDrive.files.create({
-    requestBody: { name: fileName, mimeType, parents: [folderId] },
-    media: { mimeType, body: require('stream').Readable.from([fileBuffer]) },
-    fields: 'id, webViewLink',
-  });
+  let response: any;
+  try {
+    response = await userDrive.files.create({
+      requestBody: { name: fileName, mimeType, parents: [folderId] },
+      media: { mimeType, body: require('stream').Readable.from([fileBuffer]) },
+      fields: 'id, webViewLink',
+    });
+  } catch (err: any) {
+    const msg = err?.message || '';
+    if (msg.includes('Insufficient permissions') || msg.includes('storageQuota') || err?.code === 403) {
+      // Folder not writable (SA-owned) — upload to user Drive root instead
+      console.warn(`⚠️ [User Drive] Cannot write to folder (${msg.split('.')[0]}), uploading to Drive root`);
+      response = await userDrive.files.create({
+        requestBody: { name: fileName, mimeType },
+        media: { mimeType, body: require('stream').Readable.from([fileBuffer]) },
+        fields: 'id, webViewLink',
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const fileId = response.data.id;
   if (!fileId) throw new Error('Failed to get file ID from Google Drive (user upload)');
