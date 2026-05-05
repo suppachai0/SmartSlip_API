@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
+import { shareDriveFolderWithUser } from '@/lib/googleDrive';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 import { NextResponse } from 'next/server';
 
@@ -44,10 +45,11 @@ export async function POST(request: NextRequest) {
 
     // Get googleDriveFolderId + OAuth tokens from body or fall back to the web account's stored value
     const webUser = await User.findById(userId).select(
-      'googleDriveFolderId googleSheetId googleAccessToken googleRefreshToken googleTokenExpiry'
+      'googleDriveFolderId googleSheetId googleAccessToken googleRefreshToken googleTokenExpiry email'
     );
     const googleDriveFolderId = bodyFolderId || webUser?.googleDriveFolderId;
     const resolvedSheetId = googleSheetId || webUser?.googleSheetId;
+    const userEmail = webUser?.email;
 
     // Always copy OAuth tokens from web account so LINE user can upload to Drive
     const resolvedAccessToken = googleAccessToken || webUser?.googleAccessToken;
@@ -75,6 +77,16 @@ export async function POST(request: NextRequest) {
     ).select('lineUserId googleDriveFolderId googleSheetId googleAccessToken');
 
     console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}, hasSheet: ${!!updated?.googleSheetId}, hasGoogleToken: ${!!updated?.googleAccessToken}`);
+
+    // Share the Drive folder with the user's Google account so their OAuth token can upload
+    if (googleDriveFolderId && userEmail) {
+      try {
+        await shareDriveFolderWithUser(googleDriveFolderId, userEmail);
+      } catch (shareErr: any) {
+        // Non-fatal: folder may already be shared or permission may already exist
+        console.warn(`⚠️ [LINK-LINE] Could not share Drive folder (non-fatal): ${shareErr?.message}`);
+      }
+    }
 
     return corsResponse(
       {

@@ -19,7 +19,10 @@ const drive = google.drive({
       auth_url: 'https://accounts.google.com/o/oauth2/auth',
       token_url: 'https://oauth2.googleapis.com/token',
     } as any,
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
+    scopes: [
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive',
+    ],
   }),
 });
 
@@ -197,6 +200,24 @@ export async function uploadToGoogleDriveWithRetry(
 
     throw new Error(`Google Drive upload failed: ${error?.message}`);
   }
+}
+
+/**
+ * Share a Drive folder with a user email as writer (using Service Account).
+ * Call this after creating a folder so the user's own OAuth token can upload to it.
+ */
+export async function shareDriveFolderWithUser(
+  folderId: string,
+  email: string
+): Promise<void> {
+  console.log(`🔗 [Drive] Sharing folder ${folderId} with ${email} as writer...`);
+  await drive.permissions.create({
+    fileId: folderId,
+    requestBody: { role: 'writer', type: 'user', emailAddress: email },
+    sendNotificationEmail: false,
+    supportsAllDrives: true,
+  } as any);
+  console.log(`✅ [Drive] Folder shared with ${email}`);
 }
 
 /**
