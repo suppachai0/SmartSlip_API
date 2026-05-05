@@ -42,16 +42,25 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
-    // Get googleDriveFolderId from body or fall back to the web account's stored value
-    const webUser = await User.findById(userId).select('googleDriveFolderId googleSheetId');
+    // Get googleDriveFolderId + OAuth tokens from body or fall back to the web account's stored value
+    const webUser = await User.findById(userId).select(
+      'googleDriveFolderId googleSheetId googleAccessToken googleRefreshToken googleTokenExpiry'
+    );
     const googleDriveFolderId = bodyFolderId || webUser?.googleDriveFolderId;
     const resolvedSheetId = googleSheetId || webUser?.googleSheetId;
 
-    // Build token update fields if provided
+    // Always copy OAuth tokens from web account so LINE user can upload to Drive
+    const resolvedAccessToken = googleAccessToken || webUser?.googleAccessToken;
+    const resolvedRefreshToken = googleRefreshToken || webUser?.googleRefreshToken;
+    const resolvedTokenExpiry = googleTokenExpiry
+      ? new Date(googleTokenExpiry)
+      : webUser?.googleTokenExpiry;
+
+    // Build token update fields
     const tokenFields: Record<string, unknown> = {};
-    if (googleAccessToken) tokenFields.googleAccessToken = googleAccessToken;
-    if (googleRefreshToken) tokenFields.googleRefreshToken = googleRefreshToken;
-    if (googleTokenExpiry) tokenFields.googleTokenExpiry = new Date(googleTokenExpiry);
+    if (resolvedAccessToken) tokenFields.googleAccessToken = resolvedAccessToken;
+    if (resolvedRefreshToken) tokenFields.googleRefreshToken = resolvedRefreshToken;
+    if (resolvedTokenExpiry) tokenFields.googleTokenExpiry = resolvedTokenExpiry;
 
     // Upsert: find by lineUserId and set googleDriveFolderId (create if not exists)
     const updated = await User.findOneAndUpdate(

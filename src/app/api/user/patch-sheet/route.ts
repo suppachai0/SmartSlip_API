@@ -5,13 +5,13 @@ import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
 /**
  * PATCH /api/user/patch-sheet
- * One-time utility: set googleSheetId on a user document identified by lineUserId.
+ * Utility: set googleSheetId on a user document identified by lineUserId,
+ * and optionally copy Google OAuth tokens from a web user account (userId).
  *
  * Protected by ADMIN_SECRET_KEY env var sent as x-admin-key header.
  *
- * Body: { lineUserId: string, googleSheetId: string }
- *
- * Returns the updated user's lineUserId, googleDriveFolderId, googleSheetId.
+ * Body: { lineUserId: string, googleSheetId: string, userId?: string }
+ *   userId — MongoDB _id of the web account to copy OAuth tokens from
  */
 export async function PATCH(request: NextRequest) {
   // --- Auth guard ---
@@ -25,14 +25,14 @@ export async function PATCH(request: NextRequest) {
   }
 
   // --- Parse body ---
-  let body: { lineUserId?: string; googleSheetId?: string };
+  let body: { lineUserId?: string; googleSheetId?: string; userId?: string };
   try {
     body = await request.json();
   } catch {
     return corsResponse({ error: 'Invalid JSON body' }, 400, request);
   }
 
-  const { lineUserId, googleSheetId } = body;
+  const { lineUserId, googleSheetId, userId } = body;
 
   if (!lineUserId || !googleSheetId) {
     return corsResponse(
@@ -48,11 +48,23 @@ export async function PATCH(request: NextRequest) {
 
   await connectToDatabase();
 
+  // Optionally copy OAuth tokens from web account
+  const tokenFields: Record<string, unknown> = {};
+  if (userId) {
+    const webUser = await User.findById(userId).select(
+      'googleAccessToken googleRefreshToken googleTokenExpiry'
+    );
+    if (webUser?.googleAccessToken) tokenFields.googleAccessToken = webUser.googleAccessToken;
+    if (webUser?.googleRefreshToken) tokenFields.googleRefreshToken = webUser.googleRefreshToken;
+    if (webUser?.googleTokenExpiry) tokenFields.googleTokenExpiry = webUser.googleTokenExpiry;
+    console.log(`[PATCH-SHEET] Copying tokens from web user ${userId}: hasToken=${!!webUser?.googleAccessToken}`);
+  }
+
   const updated = await User.findOneAndUpdate(
     { lineUserId },
-    { googleSheetId },
+    { googleSheetId, ...tokenFields },
     { new: true }
-  ).select('lineUserId googleDriveFolderId googleSheetId');
+  ).select('lineUserId googleDriveFolderId googleSheetId googleAccessToken');
 
   if (!updated) {
     return corsResponse(
@@ -62,7 +74,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  console.log(`✅ [PATCH-SHEET] Updated googleSheetId for ${lineUserId}`);
+  console.log(`✅ [PATCH-SHEET] Updated lineUserId ${lineUserId}, hasToken: ${!!updated.googleAccessToken}`);
 
   return corsResponse(
     {
@@ -70,6 +82,7 @@ export async function PATCH(request: NextRequest) {
       lineUserId: updated.lineUserId,
       googleDriveFolderId: updated.googleDriveFolderId ?? null,
       googleSheetId: updated.googleSheetId ?? null,
+      hasGoogleToken: !!updated.googleAccessToken,
     },
     200,
     request
