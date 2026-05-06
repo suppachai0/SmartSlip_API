@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         ...(resolvedSheetId && { googleSheetId: resolvedSheetId }),
         ...tokenFields,
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
     ).select('lineUserId googleDriveFolderId googleSheetId googleAccessToken');
 
     console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}, hasSheet: ${!!updated?.googleSheetId}, hasGoogleToken: ${!!updated?.googleAccessToken}`);
