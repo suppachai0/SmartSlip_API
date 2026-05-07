@@ -181,15 +181,8 @@ async function processReceiptInBackground(
           driveFileId = driveResult.fileId;
           console.log('✅ [BG] Google Drive upload complete (user OAuth):', driveResult.webViewLink);
         } else {
-          // Fallback to Service Account (may fail for personal Drive)
-          const driveResult = await uploadToGoogleDriveWithRetry(
-            imageBuffer,
-            driveFileName,
-            'image/jpeg',
-            user.googleDriveFolderId
-          );
-          driveFileId = driveResult.fileId;
-          console.log('✅ [BG] Google Drive upload complete (SA):', driveResult.webViewLink);
+          // No OAuth token — skip Drive upload (Service Account cannot upload to personal Drive)
+          console.log('ℹ️ [BG] No Google OAuth token for user, skipping Drive upload. User must re-sync from dashboard.');
         }
       } else {
         console.log('ℹ️ [BG] User has no Google Drive folder connected, skipping Drive upload');

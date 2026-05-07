@@ -50,8 +50,12 @@ function isRetryableError(error: any): boolean {
     return true;
   }
 
-  // Google API specific errors
-  if (errorMessage.includes('rate') || errorMessage.includes('quota')) {
+  // Google API specific transient errors — but NOT Service Account storage quota
+  // (that error is permanent and will never succeed on retry)
+  if (errorMessage.includes('service accounts do not have storage quota')) {
+    return false;
+  }
+  if (errorMessage.includes('rate')) {
     return true;
   }
 

@@ -52,20 +52,17 @@ export async function appendReceiptToSheet(
   try {
     const sheets = getSheetsClient();
 
-    // If using user's personal sheet, auto-detect first tab name
-    // so it works regardless of language/naming ("Sheet 1", "ชีต1", etc.)
+    // Always auto-detect first tab name so it works regardless of language/naming
     let tabName = process.env.GOOGLE_SHEETS_TAB || 'Sheet 1';
-    if (payload.spreadsheetId) {
-      try {
-        const meta = await sheets.spreadsheets.get({ spreadsheetId });
-        const firstSheet = meta.data.sheets?.[0]?.properties?.title;
-        if (firstSheet) {
-          tabName = firstSheet;
-          console.log(`[Sheets] Auto-detected tab name: "${tabName}"`);
-        }
-      } catch {
-        console.warn('[Sheets] Could not auto-detect tab name, using fallback:', tabName);
+    try {
+      const meta = await sheets.spreadsheets.get({ spreadsheetId });
+      const firstSheet = meta.data.sheets?.[0]?.properties?.title;
+      if (firstSheet) {
+        tabName = firstSheet;
+        console.log(`[Sheets] Auto-detected tab name: "${tabName}"`);
       }
+    } catch {
+      console.warn('[Sheets] Could not auto-detect tab name, using fallback:', tabName);
     }
 
     const timestamp = payload.timestamp
