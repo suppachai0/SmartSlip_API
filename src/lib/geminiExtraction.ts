@@ -7,8 +7,8 @@ import { retryWithBackoff } from './retry';
  */
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-// gemini-2.5-flash-lite: free tier primary, gemini-2.5-flash: fallback
-const MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+// Model priority: lite first (free/fast), then fallbacks in order
+const MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
 
 export interface SlipExtractionResult {
   amount: number;
