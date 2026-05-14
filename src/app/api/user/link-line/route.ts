@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
-import { shareDriveFolderWithUser } from '@/lib/googleDrive';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 import { NextResponse } from 'next/server';
 
@@ -25,11 +24,7 @@ export async function POST(request: NextRequest) {
     const {
       userId,
       lineUserId,
-      googleDriveFolderId: bodyFolderId,
       googleSheetId,
-      googleAccessToken,
-      googleRefreshToken,
-      googleTokenExpiry,
     } = body;
 
     if (!userId || !lineUserId) {
@@ -43,57 +38,27 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
-    // Get googleDriveFolderId + OAuth tokens from body or fall back to the web account's stored value
-    const webUser = await User.findById(userId).select(
-      'googleDriveFolderId googleSheetId googleAccessToken googleRefreshToken googleTokenExpiry email'
-    );
-    const googleDriveFolderId = bodyFolderId || webUser?.googleDriveFolderId;
+    // Get googleSheetId from body or fall back to the web account's stored value
+    const webUser = await User.findById(userId).select('googleSheetId');
     const resolvedSheetId = googleSheetId || webUser?.googleSheetId;
-    const userEmail = webUser?.email;
 
-    // Always copy OAuth tokens from web account so LINE user can upload to Drive
-    const resolvedAccessToken = googleAccessToken || webUser?.googleAccessToken;
-    const resolvedRefreshToken = googleRefreshToken || webUser?.googleRefreshToken;
-    const resolvedTokenExpiry = googleTokenExpiry
-      ? new Date(googleTokenExpiry)
-      : webUser?.googleTokenExpiry;
-
-    // Build token update fields
-    const tokenFields: Record<string, unknown> = {};
-    if (resolvedAccessToken) tokenFields.googleAccessToken = resolvedAccessToken;
-    if (resolvedRefreshToken) tokenFields.googleRefreshToken = resolvedRefreshToken;
-    if (resolvedTokenExpiry) tokenFields.googleTokenExpiry = resolvedTokenExpiry;
-
-    // Upsert: find by lineUserId and set googleDriveFolderId (create if not exists)
+    // Upsert: find by lineUserId and link to web account
     const updated = await User.findOneAndUpdate(
       { lineUserId },
       {
         lineUserId,
-        ...(googleDriveFolderId && { googleDriveFolderId }),
         ...(resolvedSheetId && { googleSheetId: resolvedSheetId }),
-        ...tokenFields,
       },
       { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
-    ).select('lineUserId googleDriveFolderId googleSheetId googleAccessToken');
+    ).select('lineUserId googleSheetId');
 
-    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasDrive: ${!!updated?.googleDriveFolderId}, hasSheet: ${!!updated?.googleSheetId}, hasGoogleToken: ${!!updated?.googleAccessToken}`);
-
-    // Share the Drive folder with the user's Google account so their OAuth token can upload
-    if (googleDriveFolderId && userEmail) {
-      try {
-        await shareDriveFolderWithUser(googleDriveFolderId, userEmail);
-      } catch (shareErr: any) {
-        // Non-fatal: folder may already be shared or permission may already exist
-        console.warn(`⚠️ [LINK-LINE] Could not share Drive folder (non-fatal): ${shareErr?.message}`);
-      }
-    }
+    console.log(`✅ [LINK-LINE] Linked lineUserId ${lineUserId}, hasSheet: ${!!updated?.googleSheetId}`);
 
     return corsResponse(
       {
         success: true,
         message: 'LINE account linked successfully',
         lineUserId: updated.lineUserId,
-        hasDriveFolder: !!updated.googleDriveFolderId,
         hasSheet: !!updated.googleSheetId,
       },
       200,

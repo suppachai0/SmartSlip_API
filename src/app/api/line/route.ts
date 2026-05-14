@@ -4,11 +4,9 @@ import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
-import { uploadToCloudStorage } from '@/lib/cloudStorage'; // Cloud Storage (non-blocking)
-import { uploadToGoogleDriveWithRetry, uploadToGoogleDriveAsUser } from '@/lib/googleDrive';
+import { uploadToCloudStorage } from '@/lib/cloudStorage';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
-import { ensureValidToken } from '@/lib/googleOAuth';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import User from '@/models/User';
 
@@ -152,43 +150,13 @@ async function processReceiptInBackground(
     const storageResult = await uploadToCloudStorage(imageBuffer, fileName, 'image/jpeg');
     console.log('✅ [BG] Cloud Storage upload complete:', storageResult.publicUrl);
 
-    // Step 3.5: Upload to user's Google Drive (if connected)
-    let driveFileId: string | undefined;
+    // Step 3.5: Get user's Google Sheet ID
     let userGoogleSheetId: string | undefined;
     try {
-      const user = await User.findOne({ lineUserId: userId }).select(
-        'googleDriveFolderId googleSheetId googleAccessToken googleRefreshToken googleTokenExpiry'
-      );
+      const user = await User.findOne({ lineUserId: userId }).select('googleSheetId');
       userGoogleSheetId = user?.googleSheetId ?? undefined;
-      if (user?.googleDriveFolderId) {
-        console.log('📂 [BG] Uploading to user Google Drive folder...');
-        const driveFileName = `receipt-${slipData.amount}-${timestamp}.jpg`;
-
-        if (user.googleAccessToken) {
-          // Use user's own OAuth token — avoids Service Account storage quota error
-          const { accessToken } = await ensureValidToken(
-            user.googleTokenExpiry ?? new Date(0),
-            user.googleAccessToken,
-            user.googleRefreshToken
-          );
-          const driveResult = await uploadToGoogleDriveAsUser(
-            imageBuffer,
-            driveFileName,
-            'image/jpeg',
-            user.googleDriveFolderId,
-            accessToken
-          );
-          driveFileId = driveResult.fileId;
-          console.log('✅ [BG] Google Drive upload complete (user OAuth):', driveResult.webViewLink);
-        } else {
-          // No OAuth token — skip Drive upload (Service Account cannot upload to personal Drive)
-          console.log('ℹ️ [BG] No Google OAuth token for user, skipping Drive upload. User must re-sync from dashboard.');
-        }
-      } else {
-        console.log('ℹ️ [BG] User has no Google Drive folder connected, skipping Drive upload');
-      }
-    } catch (driveError) {
-      console.warn('⚠️ [BG] Google Drive upload failed (non-fatal):', driveError);
+    } catch (userErr) {
+      console.warn('⚠️ [BG] Could not fetch user sheet ID:', userErr);
     }
 
     // Step 4: Save to MongoDB
@@ -211,7 +179,7 @@ async function processReceiptInBackground(
       extractedReceiver: slipData.receiver,
       issueDate: new Date(slipData.date),
       items: slipData.items || [],
-      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}${driveFileId ? ` | DriveFileId: ${driveFileId}` : ''}`,
+      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}`,
     });
 
     const receiptId = newReceipt._id.toString();
@@ -256,7 +224,7 @@ async function processReceiptInBackground(
 
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}${driveFileId ? '\n\n📂 บันทึกใน Google Drive แล้ว ✅' : ''}`,
+      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅`,
     });
 
     console.log('✅ [BG] DetailedResult sent via pushMessage');
