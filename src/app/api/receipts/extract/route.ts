@@ -4,7 +4,6 @@ import Receipt from '@/models/Receipt';
 import User from '@/models/User';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
 import { uploadToCloudStorage } from '@/lib/cloudStorage';
-import { uploadToGoogleDriveWithRetry } from '@/lib/googleDrive';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 
@@ -98,14 +97,9 @@ export async function POST(request: NextRequest) {
     // Step 6: Connect to MongoDB
     await connectToDatabase();
     console.log('โ… [EXTRACT API] MongoDB connected');
-    // Step 6a: Get user's Google Drive folder ID (for uploading files to user folder)
-    const user = await User.findById(userId);
-    const userFolderId = user?.googleDriveFolderId;
-    if (userFolderId) {
-      console.log(`๐"‚ [EXTRACT API] Using user's Google Drive folder: ${userFolderId}`);
-    } else {
-      console.warn('โ ๏ธ [EXTRACT API] User has no Google Drive folder setup yet (will upload to root)');
-    }
+    // Step 6a: Get user's Google Sheet ID
+    const user = await User.findById(userId).select('googleSheetId');
+    const userGoogleSheetId = user?.googleSheetId ?? undefined;
     // Step 7: Extract data with Gemini
     console.log('๐ค– [EXTRACT API] Starting Gemini extraction...');
     const slipData = await extractSlipDataWithGeminiFallback(imageBuffer);
@@ -133,42 +127,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-        // Step 9: Upload to storage (priority-based with Service Account)
+    // Step 9: Upload to Cloud Storage
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `receipts/${userId}/receipt-${slipData.amount}-${timestamp}.jpg`;
-    
-    let driveFileId = null;
-    let storageResult;
 
-    // Step 9a: Upload to Google Drive (Service Account - PRIMARY)
-    console.log('[EXTRACT API] Uploading to Google Drive using Service Account (PRIMARY)...');
-    try {
-      const driveResult = await uploadToGoogleDriveWithRetry(
-        imageBuffer,
-        `receipt-${slipData.amount}-${timestamp}.jpg`,
-        imageFile.type,
-        userFolderId  // ← Pass user's folder ID to upload file to user's folder
-      );
-      driveFileId = driveResult.fileId;
-      console.log('[EXTRACT API] Google Drive upload successful:', driveFileId);
-    } catch (driveError) {
-      console.error('[EXTRACT API] Google Drive upload failed:', driveError);
-      throw new Error(`Google Drive upload failed: ${(driveError as any)?.message}`);
-    }
-
-    // Step 9b: Upload to Cloud Storage (BACKUP)
-    console.log('[EXTRACT API] Uploading to Cloud Storage as backup...');
-    try {
-      storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
-      console.log('[EXTRACT API] Cloud Storage backup upload complete:', storageResult.publicUrl);
-    } catch (storageError) {
-      console.warn('[EXTRACT API] Cloud Storage backup failed (continuing with Drive-only):', storageError);
-      // Fall back to Drive-only if Cloud Storage fails
-      storageResult = {
-        publicUrl: `https://drive.google.com/file/d/${driveFileId}`,
-        fileId: driveFileId,
-      };
-    }
+    console.log('☁️ [EXTRACT API] Uploading to Cloud Storage...');
+    const storageResult = await uploadToCloudStorage(imageBuffer, fileName, imageFile.type);
+    console.log('✅ [EXTRACT API] Cloud Storage upload complete:', storageResult.publicUrl);
 
     // Step 10: Save to MongoDB
     console.log('๐’พ [EXTRACT API] Saving to MongoDB...');
@@ -184,7 +149,6 @@ export async function POST(request: NextRequest) {
       status: slipData.confidence === 'high' ? 'approved' : 'pending',
       userId,
       imageURL: storageResult.publicUrl,
-      driveFileId,
       customerName: slipData.sender,
       extractedAmount: slipData.amount,
       extractedSender: slipData.sender,
@@ -209,6 +173,7 @@ export async function POST(request: NextRequest) {
         status: newReceipt.status,
         confidence: slipData.confidence,
         timestamp: newReceipt.createdAt,
+        spreadsheetId: userGoogleSheetId,
       });
     } catch (sheetError) {
       console.error('โ ๏ธ [EXTRACT API] Failed to append receipt to Google Sheets:', sheetError);
@@ -228,7 +193,6 @@ export async function POST(request: NextRequest) {
           items: slipData.items,
           confidence: slipData.confidence,
           imageURL: storageResult.publicUrl,
-          driveFileId,
           storeName: slipData.receiver,
           createdAt: newReceipt.createdAt,
         },
