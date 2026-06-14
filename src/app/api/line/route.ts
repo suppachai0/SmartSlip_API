@@ -116,7 +116,8 @@ async function sendLineReply(
 async function processReceiptInBackground(
   userId: string,
   messageId: string,
-  imageBuffer: Buffer
+  imageBuffer: Buffer,
+  category: string = 'อื่นๆ'
 ): Promise<void> {
   try {
     console.log(`\n🔄 [BACKGROUND] Starting async receipt processing for user ${userId}`);
@@ -179,7 +180,7 @@ async function processReceiptInBackground(
       extractedReceiver: slipData.receiver,
       issueDate: new Date(slipData.date),
       items: slipData.items || [],
-      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName}`,
+      notes: `Extracted via ${slipData.method} (${slipData.confidence} confidence) | CloudStorage: ${fileName} | Category: ${category}`,
     });
 
     const receiptId = newReceipt._id.toString();
@@ -224,7 +225,7 @@ async function processReceiptInBackground(
 
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n🌐 สามารถดูเพิ่มเติมได้ที่เว็บไซต์\nhttps://smart-slip-nine.vercel.app/`,
+      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n📂 หมวดหมู่: ${category}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n🌐 สามารถดูเพิ่มเติมได้ที่เว็บไซต์\nhttps://smart-slip-nine.vercel.app/`,
     });
 
     console.log('✅ [BG] DetailedResult sent via pushMessage');
@@ -396,14 +397,61 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     return;
   }
 
-  // Handle text messages as chatbot Q&A
+  // Handle text messages
   if (event.message.type === 'text') {
     const userId = event.source.userId;
-    const text = (event.message as line.TextEventMessage).text;
+    const text = (event.message as line.TextEventMessage).text.trim();
     console.log(`💬 Text message from ${userId}: ${text}`);
-    if (userId) {
-      await answerReceiptQuestion(userId, text, event.replyToken);
+    if (!userId) return;
+
+    // Check if this is a category selection for a pending receipt
+    const categoryMap: Record<string, string> = {
+      '1': 'อาหาร', 'อาหาร': 'อาหาร',
+      '2': 'ช้อปปิ้ง', 'ช้อปปิ้ง': 'ช้อปปิ้ง',
+      '3': 'เดินทาง', 'เดินทาง': 'เดินทาง',
+      '4': 'อื่นๆ', 'อื่นๆ': 'อื่นๆ',
+    };
+    const normalizedText = text.replace(/^หมวด:/, '');
+    const selectedCategory = categoryMap[normalizedText];
+
+    if (selectedCategory) {
+      await connectToDatabase();
+      const user = await User.findOne({ lineUserId: userId }).select(
+        'pendingReceiptUrl pendingReceiptAt googleSheetId'
+      );
+
+      if (user?.pendingReceiptUrl) {
+        const pendingAge = Date.now() - (user.pendingReceiptAt?.getTime() ?? 0);
+        if (pendingAge < 10 * 60 * 1000) { // 10 minutes expiry
+          // Confirm category and process
+          await sendLineReply(event.replyToken, [{
+            type: 'text',
+            text: `✅ เลือกหมวดหมู่: ${selectedCategory}\n⏳ กำลังประมวลผล...`,
+          }]);
+
+          // Fetch image from Cloud Storage
+          const imageRes = await fetch(user.pendingReceiptUrl);
+          const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
+
+          // Clear pending state
+          await User.updateOne({ lineUserId: userId }, {
+            $unset: { pendingReceiptUrl: '', pendingReceiptAt: '' },
+          });
+
+          // Process receipt with category
+          await processReceiptInBackground(userId, '', imageBuffer, selectedCategory);
+          return;
+        } else {
+          // Expired
+          await User.updateOne({ lineUserId: userId }, {
+            $unset: { pendingReceiptUrl: '', pendingReceiptAt: '' },
+          });
+        }
+      }
     }
+
+    // Normal chatbot Q&A
+    await answerReceiptQuestion(userId, text, event.replyToken);
     return;
   }
 
@@ -425,37 +473,47 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     console.log(`\n📥 [WEBHOOK] Received image message: ${messageId}`);
     console.log(`👤 User ID: ${event.source.userId}`);
 
-    // Pre-download image while showing loading message
+    // Pre-download image
     const imageBuffer = await getImageFromLine(messageId);
     const fileSizeMB = (imageBuffer.length / 1024 / 1024).toFixed(2);
     console.log(`✅ Image downloaded (${fileSizeMB}MB)`);
 
-    // ⚡ INSTANT REPLY: Tell user we're processing
-    await sendLineReply(event.replyToken, [
-      {
-        type: 'text',
-        text: '✅ ได้รับรูปแล้ว!\n\n⏳ กำลังประมวลผล...\n\n📊 OCR ด้วย AI\n☁️ Upload Cloud Storage\n💾 บันทึกข้อมูล',
-      },
-    ]);
-
-    console.log('✅ Initial reply sent to user');
-
-    // 🔄 BACKGROUND PROCESSING (wait for completion)
-    // Must complete before returning to avoid Vercel function termination
     const userId = event.source.userId;
     if (!userId) {
       console.error('❌ User ID is missing from webhook event');
       return;
     }
 
-    console.log('🔄 Background processing starting...');
-    try {
-      await processReceiptInBackground(userId, messageId, imageBuffer);
-      console.log('🔄 Background processing completed successfully\n');
-    } catch (bgError) {
-      console.error('❌ Uncaught background error:', bgError);
-    }
+    // Upload image to Cloud Storage for pending state
+    await connectToDatabase();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const pendingFileName = `pending/${userId}/receipt-${timestamp}.jpg`;
+    const { publicUrl } = await uploadToCloudStorage(imageBuffer, pendingFileName, 'image/jpeg');
 
+    // Save pending state to user document
+    await User.findOneAndUpdate(
+      { lineUserId: userId },
+      { pendingReceiptUrl: publicUrl, pendingReceiptAt: new Date() },
+      { upsert: true }
+    );
+
+    // Ask for category with Quick Reply
+    await sendLineReply(event.replyToken, [
+      {
+        type: 'text',
+        text: '✅ ได้รับรูปแล้ว!\n\n📂 คุณต้องการให้ใบเสร็จนี้อยู่ในหมวดหมู่อะไร?',
+        quickReply: {
+          items: [
+            { type: 'action', action: { type: 'message', label: '🍽️ อาหาร', text: 'หมวด:อาหาร' } },
+            { type: 'action', action: { type: 'message', label: '🛍️ ช้อปปิ้ง', text: 'หมวด:ช้อปปิ้ง' } },
+            { type: 'action', action: { type: 'message', label: '🚌 เดินทาง', text: 'หมวด:เดินทาง' } },
+            { type: 'action', action: { type: 'message', label: '✨ อื่นๆ', text: 'หมวด:อื่นๆ' } },
+          ],
+        },
+      } as any,
+    ]);
+
+    console.log('✅ Category prompt sent to user');
     return;
   } catch (error: any) {
     console.error('\n❌ [ERROR] Download/reply failed:', error);
