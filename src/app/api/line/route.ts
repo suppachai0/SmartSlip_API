@@ -417,35 +417,34 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     if (selectedCategory) {
       await connectToDatabase();
       const user = await User.findOne({ lineUserId: userId }).select(
-        'pendingReceiptUrl pendingReceiptAt googleSheetId'
+        'pendingReceipts googleSheetId'
       );
 
-      if (user?.pendingReceiptUrl) {
-        const pendingAge = Date.now() - (user.pendingReceiptAt?.getTime() ?? 0);
-        if (pendingAge < 10 * 60 * 1000) { // 10 minutes expiry
-          // Confirm category and process
-          await sendLineReply(event.replyToken, [{
-            type: 'text',
-            text: `✅ เลือกหมวดหมู่: ${selectedCategory}\n⏳ กำลังประมวลผล...`,
-          }]);
+      // Filter valid (non-expired) pending receipts
+      const now = Date.now();
+      const validPending = (user?.pendingReceipts ?? []).filter(
+        (r: any) => now - new Date(r.receivedAt).getTime() < 10 * 60 * 1000
+      );
 
-          // Download image from Cloud Storage using SDK (avoids public access issues)
-          const imageBuffer = await downloadFromCloudStorage(user.pendingReceiptUrl);
+      if (validPending.length > 0) {
+        // Confirm category and process
+        await sendLineReply(event.replyToken, [{
+          type: 'text',
+          text: `✅ เลือกหมวดหมู่: ${selectedCategory}\n⏳ กำลังประมวลผล ${validPending.length} รูป...`,
+        }]);
 
-          // Clear pending state
-          await User.updateOne({ lineUserId: userId }, {
-            $unset: { pendingReceiptUrl: '', pendingReceiptAt: '' },
-          });
+        // Clear pending state immediately
+        await User.updateOne({ lineUserId: userId }, { $set: { pendingReceipts: [] } });
 
-          // Process receipt with category
+        // Process each image sequentially
+        for (const pending of validPending) {
+          const imageBuffer = await downloadFromCloudStorage(pending.url);
           await processReceiptInBackground(userId, '', imageBuffer, selectedCategory);
-          return;
-        } else {
-          // Expired
-          await User.updateOne({ lineUserId: userId }, {
-            $unset: { pendingReceiptUrl: '', pendingReceiptAt: '' },
-          });
         }
+        return;
+      } else if ((user?.pendingReceipts ?? []).length > 0) {
+        // All expired — clean up
+        await User.updateOne({ lineUserId: userId }, { $set: { pendingReceipts: [] } });
       }
     }
 
@@ -489,10 +488,10 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     const pendingFileName = `pending/${userId}/receipt-${timestamp}.jpg`;
     const { publicUrl } = await uploadToCloudStorage(imageBuffer, pendingFileName, 'image/jpeg');
 
-    // Save pending state to user document
+    // Push to pending receipts array (supports multiple images sent at once)
     await User.findOneAndUpdate(
       { lineUserId: userId },
-      { pendingReceiptUrl: publicUrl, pendingReceiptAt: new Date() },
+      { $push: { pendingReceipts: { url: publicUrl, receivedAt: new Date() } } },
       { upsert: true }
     );
 

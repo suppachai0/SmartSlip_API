@@ -18,9 +18,8 @@ export interface IUser extends Document {
   googleDriveFolderId?: string; // SmartSlip/[userId]/Receipts folder
   googleSheetId?: string; // User's personal Google Sheet
 
-  // Pending receipt waiting for category selection
-  pendingReceiptUrl?: string;
-  pendingReceiptAt?: Date;
+  // Pending receipts waiting for category selection (supports multiple images sent at once)
+  pendingReceipts?: Array<{ url: string; receivedAt: Date }>;
 
   lastLoginAt?: Date;
   createdAt: Date;
@@ -46,8 +45,12 @@ const userSchema = new Schema<IUser>(
     googleDriveFolderId: String,
     googleSheetId: String,
 
-    pendingReceiptUrl: String,
-    pendingReceiptAt: Date,
+    pendingReceipts: [
+      {
+        url: String,
+        receivedAt: Date,
+      },
+    ],
 
     lastLoginAt: Date,
   },
