@@ -224,7 +224,7 @@ async function processReceiptInBackground(
 
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅`,
+      text: `${confidenceEmoji} ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}${itemsText}\n🎯 ความแม่นยำ: ${confidenceEmoji} ${slipData.confidence}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n🌐 สามารถดูเพิ่มเติมได้ที่เว็บไซต์\nhttps://smart-slip-nine.vercel.app/`,
     });
 
     console.log('✅ [BG] DetailedResult sent via pushMessage');
