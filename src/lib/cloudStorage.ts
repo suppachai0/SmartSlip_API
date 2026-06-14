@@ -82,3 +82,17 @@ export async function listFilesInBucket() {
     throw error;
   }
 }
+
+/**
+ * Download a file from Cloud Storage by its public URL or file path
+ */
+export async function downloadFromCloudStorage(filePathOrUrl: string): Promise<Buffer> {
+  const bucket = storage.bucket(bucketName);
+  // Strip the base URL if a full URL was provided
+  const filePath = filePathOrUrl
+    .replace(`https://storage.googleapis.com/${bucketName}/`, '')
+    .replace(`gs://${bucketName}/`, '');
+  console.log(`📥 Downloading from Cloud Storage: ${filePath}`);
+  const [buffer] = await bucket.file(filePath).download();
+  return buffer;
+}

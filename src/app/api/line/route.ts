@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { extractSlipDataWithGeminiFallback } from '@/lib/geminiExtraction';
-import { uploadToCloudStorage } from '@/lib/cloudStorage';
+import { uploadToCloudStorage, downloadFromCloudStorage } from '@/lib/cloudStorage';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -429,9 +429,8 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
             text: `✅ เลือกหมวดหมู่: ${selectedCategory}\n⏳ กำลังประมวลผล...`,
           }]);
 
-          // Fetch image from Cloud Storage
-          const imageRes = await fetch(user.pendingReceiptUrl);
-          const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
+          // Download image from Cloud Storage using SDK (avoids public access issues)
+          const imageBuffer = await downloadFromCloudStorage(user.pendingReceiptUrl);
 
           // Clear pending state
           await User.updateOne({ lineUserId: userId }, {
