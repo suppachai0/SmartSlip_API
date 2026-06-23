@@ -15,7 +15,6 @@ export interface IUser extends Document {
   googleAccessToken?: string;
   googleRefreshToken?: string;
   googleTokenExpiry?: Date;
-  googleDriveFolderId?: string; // SmartSlip/[userId]/Receipts folder
   googleSheetId?: string; // User's personal Google Sheet
 
   // Pending receipts waiting for category selection (supports multiple images sent at once)
@@ -42,7 +41,6 @@ const userSchema = new Schema<IUser>(
     googleAccessToken: String,
     googleRefreshToken: String,
     googleTokenExpiry: Date,
-    googleDriveFolderId: String,
     googleSheetId: String,
 
     pendingReceipts: [
