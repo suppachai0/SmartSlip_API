@@ -52,6 +52,9 @@ export async function GET(request: NextRequest) {
     const expiryDate = new Date();
     expiryDate.setSeconds(expiryDate.getSeconds() + tokenData.expires_in);
 
+    const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
+    const isAdmin = adminEmails.includes(userInfo.email);
+
     const user = await User.findOneAndUpdate(
       { googleId: userInfo.id },
       {
@@ -63,8 +66,9 @@ export async function GET(request: NextRequest) {
         googleRefreshToken: tokenData.refresh_token || undefined,
         googleTokenExpiry: expiryDate,
         lastLoginAt: new Date(),
+        ...(isAdmin && { role: 'admin', status: 'approved' }),
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
     console.log('User authenticated:', user._id);

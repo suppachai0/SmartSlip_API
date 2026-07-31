@@ -108,6 +108,9 @@ export async function POST(request: NextRequest) {
     // Connect to database and upsert user
     await connectToDatabase();
 
+    const adminIds = (process.env.ADMIN_LINE_USER_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
+    const isAdmin = adminIds.includes(profile.sub);
+
     const user = await User.findOneAndUpdate(
       { lineUserId: profile.sub },
       {
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest) {
         refreshToken: tokenData.refresh_token,
         accessTokenExpiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
         lastLoginAt: new Date(),
+        ...(isAdmin && { role: 'admin', status: 'approved' }),
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );

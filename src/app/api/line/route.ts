@@ -397,12 +397,33 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     return;
   }
 
+  const userId = event.source.userId;
+  if (!userId) return;
+
+  // Check user approval status before processing any message
+  await connectToDatabase();
+  const adminIds = (process.env.ADMIN_LINE_USER_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
+  const isAdmin = adminIds.includes(userId);
+  const userRecord = await User.findOneAndUpdate(
+    { lineUserId: userId },
+    isAdmin
+      ? { $set: { role: 'admin', status: 'approved' } }
+      : { $setOnInsert: { role: 'user', status: 'pending' } },
+    { upsert: true, new: true }
+  ).select('status role');
+  const userStatus = (userRecord?.status as string) ?? 'pending';
+  if (userStatus !== 'approved') {
+    const msg = userStatus === 'rejected'
+      ? '🚫 บัญชีของคุณถูกปฏิเสธ กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/'
+      : '⏳ บัญชีของคุณกำลังรอการอนุมัติจากแอดมิน\n\nหากต้องการใช้งาน ติดต่อแอดมินได้ที่\nhttps://smart-slip-nine.vercel.app/';
+    await sendLineReply(event.replyToken, [{ type: 'text', text: msg }]);
+    return;
+  }
+
   // Handle text messages
   if (event.message.type === 'text') {
-    const userId = event.source.userId;
     const text = (event.message as line.TextEventMessage).text.trim();
     console.log(`💬 Text message from ${userId}: ${text}`);
-    if (!userId) return;
 
     // Check if this is a category selection for a pending receipt
     const categoryMap: Record<string, string> = {
@@ -475,12 +496,6 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     const imageBuffer = await getImageFromLine(messageId);
     const fileSizeMB = (imageBuffer.length / 1024 / 1024).toFixed(2);
     console.log(`✅ Image downloaded (${fileSizeMB}MB)`);
-
-    const userId = event.source.userId;
-    if (!userId) {
-      console.error('❌ User ID is missing from webhook event');
-      return;
-    }
 
     // Upload image to Cloud Storage for pending state
     await connectToDatabase();

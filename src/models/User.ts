@@ -20,6 +20,9 @@ export interface IUser extends Document {
   // Pending receipts waiting for category selection (supports multiple images sent at once)
   pendingReceipts?: Array<{ url: string; receivedAt: Date }>;
 
+  role?: 'user' | 'admin';
+  status?: 'pending' | 'approved' | 'rejected';
+
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +52,9 @@ const userSchema = new Schema<IUser>(
         receivedAt: Date,
       },
     ],
+
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
 
     lastLoginAt: Date,
   },
