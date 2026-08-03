@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as line from '@line/bot-sdk';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
+
+const lineClient = new line.Client({
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
+});
 
 /**
  * PATCH /api/admin/users/[id]
@@ -56,6 +61,23 @@ export async function PATCH(
 
   if (!updated) {
     return corsResponse({ error: `No user found with id: ${id}` }, 404, request);
+  }
+
+  // Send LINE push notification if status changed and user has lineUserId
+  if (status && updated.lineUserId) {
+    let msg = '';
+    if (status === 'approved') {
+      msg = '✅ บัญชีของคุณได้รับการอนุมัติแล้ว!\n\nคุณสามารถใช้งาน SmartSlip ได้แล้วตอนนี้ 🎉\nลองส่งรูปใบเสร็จมาได้เลย';
+    } else if (status === 'rejected') {
+      msg = '❌ บัญชีของคุณถูกปฏิเสธ\n\nหากมีข้อสงสัย กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/';
+    }
+    if (msg) {
+      try {
+        await lineClient.pushMessage(updated.lineUserId, { type: 'text', text: msg });
+      } catch (err) {
+        console.error('⚠️ Failed to send LINE notification:', err);
+      }
+    }
   }
 
   return corsResponse({ success: true, user: updated }, 200, request);
