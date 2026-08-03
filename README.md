@@ -97,48 +97,6 @@ Content-Type: application/json
 
 ---
 
-## Environment Variables
-
-```env
-# LINE Messaging API
-LINE_CHANNEL_ACCESS_TOKEN=
-LINE_CHANNEL_SECRET=
-
-# LINE Login (web)
-LINE_LOGIN_CHANNEL_ID=
-LINE_LOGIN_CHANNEL_SECRET=
-LINE_LOGIN_REDIRECT_URI=
-
-# MongoDB
-MONGODB_URI=
-
-# Google Service Account (Cloud Storage + Sheets)
-GOOGLE_PROJECT_ID=
-GOOGLE_SERVICE_ACCOUNT_EMAIL=
-GOOGLE_PRIVATE_KEY=
-GOOGLE_PRIVATE_KEY_ID=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLOUD_STORAGE_BUCKET_NAME=
-
-# Google OAuth (web login)
-GOOGLE_OAUTH_CLIENT_ID=
-GOOGLE_OAUTH_CLIENT_SECRET=
-GOOGLE_OAUTH_REDIRECT_URI=
-
-# Gemini AI
-GEMINI_API_KEY=
-
-# App
-FRONTEND_URL=
-ADMIN_SECRET_KEY=
-
-# Role system — admin users (comma-separated)
-ADMIN_LINE_USER_IDS=Uxxxxxxxx,Uxxxxxxxx
-ADMIN_EMAILS=admin@example.com
-```
-
----
-
 ## การทำงานของ LINE Bot
 
 1. ผู้ใช้ส่งข้อความครั้งแรก → ระบบสร้าง record อัตโนมัติ (status: `pending`)
