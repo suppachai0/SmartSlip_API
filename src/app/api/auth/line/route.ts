@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
         lastLoginAt: new Date(),
         ...(isAdmin && { role: 'admin', status: 'approved' }),
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
     );
 
     const sessionPayload = {

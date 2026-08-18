@@ -50,7 +50,7 @@ export async function PATCH(request: NextRequest) {
   const updated = await User.findOneAndUpdate(
     { lineUserId },
     { googleSheetId },
-    { new: true }
+    { returnDocument: 'after' }
   ).select('lineUserId googleSheetId');
 
   if (!updated) {

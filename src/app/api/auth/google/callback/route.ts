@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
         lastLoginAt: new Date(),
         ...(isAdmin && { role: 'admin', status: 'approved' }),
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     console.log('User authenticated:', user._id);

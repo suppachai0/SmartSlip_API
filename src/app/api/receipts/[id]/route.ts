@@ -147,8 +147,8 @@ export async function PUT(
       id,
       updateData,
       {
-        new: true, // Return updated document
-        runValidators: true, // Run schema validators
+        returnDocument: 'after',
+        runValidators: true,
       }
     );
 

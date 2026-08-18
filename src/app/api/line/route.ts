@@ -409,7 +409,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     isAdmin
       ? { $set: { role: 'admin', status: 'approved' } }
       : { $setOnInsert: { role: 'user', status: 'pending' } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   ).select('status role');
   const userStatus = (userRecord?.status as string) ?? 'pending';
   if (userStatus !== 'approved') {

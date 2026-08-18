@@ -56,7 +56,7 @@ export async function PATCH(
 
   const { id } = await params;
 
-  const updated = await User.findByIdAndUpdate(id, update, { new: true })
+  const updated = await User.findByIdAndUpdate(id, update, { returnDocument: 'after' })
     .select('lineUserId displayName email role status');
 
   if (!updated) {
