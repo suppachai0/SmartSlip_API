@@ -93,8 +93,11 @@ export async function POST(request: NextRequest) {
       if (resolvedReason) {
         user.statusMessage = resolvedReason;
       }
-      user.role = 'user';
-      user.status = 'pending';
+      // If user is already active or approved, keep their status and do not reset to pending
+      if (user.status !== 'active' && user.status !== 'approved') {
+        user.role = user.role || 'user';
+        user.status = 'pending';
+      }
       await user.save();
     }
 
