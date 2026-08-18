@@ -412,13 +412,17 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     { upsert: true, returnDocument: 'after' }
   ).select('status role');
   const userStatus = (userRecord?.status as string) ?? 'pending';
+  console.log(`🔍 [DEBUG] User ${userId} status in DB: "${userStatus}"`);
+  console.log(`🔍 [DEBUG] Role: "${userRecord?.role}"`);
   if (userStatus !== 'active' && userStatus !== 'approved') {
     const msg = userStatus === 'rejected'
       ? '🚫 บัญชีของคุณถูกปฏิเสธ กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/'
       : '⏳ บัญชีของคุณกำลังรอการอนุมัติจากแอดมิน\n\nหากต้องการใช้งาน ติดต่อแอดมินได้ที่\nhttps://smart-slip-nine.vercel.app/';
+    console.log(`📨 [BLOCK] Status check failed - Sending: ${msg.split('\n')[0]}`);
     await sendLineReply(event.replyToken, [{ type: 'text', text: msg }]);
     return;
   }
+  console.log(`✅ [ALLOW] User approved/active - Processing message normally`);
 
   // Handle text messages
   if (event.message.type === 'text') {

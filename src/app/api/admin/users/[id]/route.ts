@@ -63,6 +63,9 @@ export async function PATCH(
     return corsResponse({ error: `No user found with id: ${id}` }, 404, request);
   }
 
+  console.log(`🔧 [ADMIN UPDATE] User ${updated.displayName} (${id}) - Status: ${updated.status}, Role: ${updated.role}`);
+  console.log(`📝 [ADMIN UPDATE] Update payload was:`, update);
+
   // Send LINE push notification if status changed and user has lineUserId
   if (status && updated.lineUserId) {
     let msg = '';
