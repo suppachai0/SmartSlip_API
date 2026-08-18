@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
+import { validateApiKey, unauthorizedResponse } from '@/lib/auth';
 
 /**
  * GET /api/receipts/summary
@@ -13,11 +14,19 @@ import { corsResponse, addCorsHeaders } from '@/lib/cors';
  */
 export async function GET(request: NextRequest) {
   try {
+    if (!validateApiKey(request)) {
+      return unauthorizedResponse();
+    }
+
     await connectToDatabase();
 
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
     const storeName = searchParams.get('storeName');
+
+    if (!userId) {
+      return corsResponse({ error: 'userId query parameter is required' }, 400, request);
+    }
 
     // Build filter query
     const matchStage: any = {};

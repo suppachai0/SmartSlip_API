@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
+
+// Ephemeral fallback — tokens won't survive restarts. Set JWT_SECRET in env.
+const JWT_SECRET = process.env.JWT_SECRET ?? (() => {
+  console.error('🚨 CRITICAL: JWT_SECRET is not set. Using ephemeral secret — tokens invalidated on every cold start.');
+  return crypto.randomBytes(32).toString('hex');
+})();
 
 /**
  * Validate API Key from request headers or query parameters
@@ -17,14 +24,17 @@ export function validateApiKey(request: NextRequest): boolean {
   // Get valid API keys from environment
   const validKeys = (process.env.VALID_API_KEYS || '').split(',').filter(key => key.trim());
 
-  // If no valid keys configured, allow all requests (warning: not secure for production)
   if (validKeys.length === 0) {
-    console.warn('⚠️ WARNING: VALID_API_KEYS not configured. All API requests allowed.');
-    return true;
+    console.error('🚨 CRITICAL: VALID_API_KEYS not configured. Denying API key request.');
+    return false;
   }
 
-  // Check if provided key matches any valid key
-  return validKeys.some(key => key.trim() === providedKey.trim());
+  // Constant-time comparison to prevent timing attacks
+  return validKeys.some(key => {
+    const a = Buffer.from(key.trim());
+    const b = Buffer.from(providedKey.trim());
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  });
 }
 
 /**
@@ -47,16 +57,11 @@ export function unauthorizedResponse(
  * Requires JWT_SECRET to be set in environment
  */
 export function generateJWT(payload: any, expiresIn: number = 3600): string {
-  // Note: This is a simple implementation. Consider using 'jsonwebtoken' package for production
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64');
-  const timestamp = Math.floor(Date.now() / 1000);
 
-  // Simple signature (In production, use proper JWT library)
-  const secret = process.env.JWT_SECRET || 'default-secret';
-  const crypto = require('crypto');
   const signature = crypto
-    .createHmac('sha256', secret)
+    .createHmac('sha256', JWT_SECRET)
     .update(`${header}.${body}`)
     .digest('base64');
 
@@ -75,11 +80,8 @@ export function verifyJWT(token: string): any {
 
     const [header, body, signature] = parts;
 
-    // Verify signature
-    const secret = process.env.JWT_SECRET || 'default-secret';
-    const crypto = require('crypto');
     const expectedSignature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha256', JWT_SECRET)
       .update(`${header}.${body}`)
       .digest('base64');
 

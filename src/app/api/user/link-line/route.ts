@@ -3,6 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/User';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
 import { NextResponse } from 'next/server';
+import { validateApiKey, unauthorizedResponse } from '@/lib/auth';
 
 /**
  * POST /api/user/link-line
@@ -14,6 +15,10 @@ import { NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
+    if (!validateApiKey(request)) {
+      return unauthorizedResponse();
+    }
+
     let body;
     try {
       body = await request.json();
