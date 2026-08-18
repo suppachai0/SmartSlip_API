@@ -73,11 +73,15 @@ export async function PATCH(
     }
     if (msg) {
       try {
+        console.log(`📤 Sending LINE notification to ${updated.lineUserId} - Status: ${status}`);
         await lineClient.pushMessage(updated.lineUserId, { type: 'text', text: msg });
+        console.log(`✅ LINE notification sent successfully`);
       } catch (err) {
         console.error('⚠️ Failed to send LINE notification:', err);
       }
     }
+  } else {
+    console.warn(`⚠️ Skipping LINE notification - status: ${status}, lineUserId: ${updated.lineUserId}`);
   }
 
   return corsResponse({ success: true, user: updated }, 200, request);
