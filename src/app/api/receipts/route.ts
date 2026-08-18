@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import User from '@/models/User';
 import { validateApiKey, unauthorizedResponse } from '@/lib/auth';
 import { checkRateLimit, rateLimitExceededResponse, addRateLimitHeaders } from '@/lib/rateLimit';
 import { appendReceiptToSheet } from '@/lib/googleSheets';
 import { addCorsHeaders, corsResponse } from '@/lib/cors';
+import { notifyUserByLine } from '@/lib/lineNotifications';
 
 /**
  * POST /api/receipts
@@ -138,7 +140,17 @@ export async function POST(request: NextRequest) {
       console.error('⚠️ Failed to append receipt to Google Sheets:', sheetError);
     }
 
-    // Step 9: Return success response
+    // Step 9: Notify user via LINE when a receipt is uploaded
+    try {
+      const receiptOwner = await User.findById(userId.trim()).select('lineUserId displayName');
+      if (receiptOwner?.lineUserId) {
+        await notifyUserByLine(receiptOwner._id.toString(), `✅ อัปโหลดใบเสร็จเรียบร้อยแล้ว\nร้าน: ${receipt.storeName}\nจำนวน: ${Number(receipt.amount).toLocaleString('th-TH')} ฿\nสถานะ: ${receipt.status}`);
+      }
+    } catch (notificationError) {
+      console.error('⚠️ Failed to send LINE upload notification:', notificationError);
+    }
+
+    // Step 10: Return success response
     let response = corsResponse(
       {
         success: true,

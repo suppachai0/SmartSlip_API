@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import connectToDatabase from '@/lib/mongodb';
 import Receipt from '@/models/Receipt';
+import User from '@/models/User';
 import { corsResponse, addCorsHeaders } from '@/lib/cors';
+import { notifyUserByLine } from '@/lib/lineNotifications';
 
 /**
  * GET /api/receipts/[id]
@@ -151,6 +153,22 @@ export async function PUT(
         runValidators: true,
       }
     );
+
+    if (updateData.status && updatedReceipt?.userId) {
+      const user = await User.findById(updatedReceipt.userId).select('lineUserId displayName');
+      if (user?.lineUserId) {
+        const statusTextMap: Record<string, string> = {
+          approved: '✅ ใบเสร็จของคุณได้รับการอนุมัติแล้ว',
+          rejected: '❌ ใบเสร็จของคุณถูกปฏิเสธ',
+          pending: '⏳ ใบเสร็จของคุณกลับสู่สถานะรอการตรวจสอบ',
+          completed: '✅ การประมวลผลใบเสร็จของคุณเสร็จสิ้น',
+          failed: '⚠️ การประมวลผลใบเสร็จของคุณล้มเหลว',
+        };
+        const statusText = statusTextMap[String(updatedReceipt.status)] || '📌 มีการอัปเดตสถานะใบเสร็จของคุณ';
+
+        await notifyUserByLine(user._id.toString(), `${statusText}\nร้าน: ${updatedReceipt.storeName || 'Unknown'}\nจำนวน: ${Number(updatedReceipt.amount || 0).toLocaleString('th-TH')} ฿`);
+      }
+    }
 
     return corsResponse(
       {
