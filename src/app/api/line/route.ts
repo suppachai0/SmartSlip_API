@@ -412,7 +412,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     { upsert: true, returnDocument: 'after' }
   ).select('status role');
   const userStatus = (userRecord?.status as string) ?? 'pending';
-  if (userStatus !== 'approved') {
+  if (userStatus !== 'active' && userStatus !== 'approved') {
     const msg = userStatus === 'rejected'
       ? '🚫 บัญชีของคุณถูกปฏิเสธ กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/'
       : '⏳ บัญชีของคุณกำลังรอการอนุมัติจากแอดมิน\n\nหากต้องการใช้งาน ติดต่อแอดมินได้ที่\nhttps://smart-slip-nine.vercel.app/';

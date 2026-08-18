@@ -44,8 +44,8 @@ export async function PATCH(
   if (role && !['user', 'admin'].includes(role)) {
     return corsResponse({ error: 'role must be "user" or "admin"' }, 400, request);
   }
-  if (status && !['pending', 'approved', 'rejected'].includes(status)) {
-    return corsResponse({ error: 'status must be "pending", "approved", or "rejected"' }, 400, request);
+  if (status && !['pending', 'active', 'restricted', 'rejected'].includes(status)) {
+    return corsResponse({ error: 'status must be "pending", "active", "restricted", or "rejected"' }, 400, request);
   }
 
   await connectToDatabase();
@@ -66,7 +66,7 @@ export async function PATCH(
   // Send LINE push notification if status changed and user has lineUserId
   if (status && updated.lineUserId) {
     let msg = '';
-    if (status === 'approved') {
+    if (status === 'active') {
       msg = '✅ บัญชีของคุณได้รับการอนุมัติแล้ว!\n\nคุณสามารถใช้งาน SmartSlip ได้แล้วตอนนี้ 🎉\nลองส่งรูปใบเสร็จมาได้เลย';
     } else if (status === 'rejected') {
       msg = '❌ บัญชีของคุณถูกปฏิเสธ\n\nหากมีข้อสงสัย กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/';
