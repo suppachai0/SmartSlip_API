@@ -14,6 +14,7 @@ export interface IReceipt extends Document {
   dueDate?: Date;
   storeName: string;
   userId: string;
+  roleContext?: 'user' | 'clerk';
   imageURL?: string;
   driveFileId?: string; // Google Drive file ID (optional)
   items?: {
@@ -73,6 +74,11 @@ const receiptSchema = new Schema<IReceipt>(
     userId: {
       type: String,
       required: true,
+      index: true,
+    },
+    roleContext: {
+      type: String,
+      enum: ['user', 'clerk'],
       index: true,
     },
     imageURL: {

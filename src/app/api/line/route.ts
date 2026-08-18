@@ -153,9 +153,11 @@ async function processReceiptInBackground(
 
     // Step 3.5: Get user's Google Sheet ID
     let userGoogleSheetId: string | undefined;
+    let userRole: 'user' | 'admin' | 'clerk' = 'user';
     try {
-      const user = await User.findOne({ lineUserId: userId }).select('googleSheetId');
+      const user = await User.findOne({ lineUserId: userId }).select('googleSheetId role');
       userGoogleSheetId = user?.googleSheetId ?? undefined;
+      userRole = user?.role ?? 'user';
     } catch (userErr) {
       console.warn('⚠️ [BG] Could not fetch user sheet ID:', userErr);
     }
@@ -164,6 +166,7 @@ async function processReceiptInBackground(
     console.log('💾 [BG] Saving to MongoDB...');
     const transactionId = `LINE-${userId}-${Date.now()}`;
     const receiptNumber = `RCP-${Date.now()}`;
+    const roleContext = userRole === 'admin' ? undefined : userRole === 'clerk' ? 'clerk' : 'user';
 
     const newReceipt = await Receipt.create({
       transactionId,
@@ -173,6 +176,7 @@ async function processReceiptInBackground(
       currency: 'THB',
       status: slipData.confidence === 'high' ? 'approved' : 'pending',
       userId,
+      roleContext,
       imageURL: storageResult.publicUrl,
       customerName: slipData.sender,
       extractedAmount: slipData.amount,
