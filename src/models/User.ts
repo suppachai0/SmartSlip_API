@@ -5,6 +5,7 @@ export interface IUser extends Document {
   displayName?: string;
   pictureUrl?: string;
   email?: string;
+  phoneNumber?: string;
   statusMessage?: string;
   accessToken?: string;
   refreshToken?: string;
@@ -34,6 +35,7 @@ const userSchema = new Schema<IUser>(
     displayName: String,
     pictureUrl: String,
     email: String,
+    phoneNumber: String,
     statusMessage: String,
     accessToken: String,
     refreshToken: String,
