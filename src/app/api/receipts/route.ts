@@ -228,8 +228,12 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    // Step 1: Validate API Key
-    if (!validateApiKey(request)) {
+    // Step 1: Validate API Key or Admin Key
+    const adminKey = process.env.ADMIN_SECRET_KEY;
+    const incomingAdminKey = request.headers.get('x-admin-key');
+    const isAdminAuth = !!(adminKey && incomingAdminKey && incomingAdminKey === adminKey);
+
+    if (!isAdminAuth && !validateApiKey(request)) {
       return unauthorizedResponse('Missing or invalid API key');
     }
 

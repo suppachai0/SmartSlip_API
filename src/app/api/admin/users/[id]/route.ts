@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
 import connectToDatabase from '@/lib/mongodb';
@@ -68,11 +69,19 @@ export async function PATCH(
 
   const { id } = await params;
 
-  const updated = await User.findByIdAndUpdate(id, update, { returnDocument: 'after' })
-    .select('lineUserId displayName email role status');
+  let updated = null;
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    updated = await User.findByIdAndUpdate(id, update, { returnDocument: 'after' })
+      .select('lineUserId displayName email role status');
+  }
 
   if (!updated) {
-    return corsResponse({ error: `No user found with id: ${id}` }, 404, request);
+    updated = await User.findOneAndUpdate({ lineUserId: id }, update, { returnDocument: 'after' })
+      .select('lineUserId displayName email role status');
+  }
+
+  if (!updated) {
+    return corsResponse({ error: `No user found with id or lineUserId: ${id}` }, 404, request);
   }
 
   console.log(`🔧 [ADMIN UPDATE] User ${updated.displayName} (${id}) - Status: ${updated.status}, Role: ${updated.role}`);
