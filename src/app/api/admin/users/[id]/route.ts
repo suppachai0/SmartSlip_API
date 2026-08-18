@@ -44,15 +44,27 @@ export async function PATCH(
   if (role && !['user', 'admin'].includes(role)) {
     return corsResponse({ error: 'role must be "user" or "admin"' }, 400, request);
   }
-  if (status && !['pending', 'active', 'restricted', 'rejected'].includes(status)) {
-    return corsResponse({ error: 'status must be "pending", "active", "restricted", or "rejected"' }, 400, request);
+  let normalizedStatus = status;
+  if (status) {
+    const s = status.toLowerCase().trim();
+    if (['active', 'approved', 'unlocked'].includes(s)) {
+      normalizedStatus = 'active';
+    } else if (['restricted', 'suspended', 'blocked', 'inactive', 'locked'].includes(s)) {
+      normalizedStatus = 'restricted';
+    } else if (['rejected', 'cancelled', 'canceled', 'revoked', 'disabled'].includes(s)) {
+      normalizedStatus = 'rejected';
+    } else if (['pending'].includes(s)) {
+      normalizedStatus = 'pending';
+    } else {
+      return corsResponse({ error: 'status must be "pending", "active", "restricted", or "rejected"' }, 400, request);
+    }
   }
 
   await connectToDatabase();
 
   const update: Record<string, string> = {};
   if (role) update.role = role;
-  if (status) update.status = status;
+  if (normalizedStatus) update.status = normalizedStatus;
 
   const { id } = await params;
 
@@ -67,16 +79,18 @@ export async function PATCH(
   console.log(`📝 [ADMIN UPDATE] Update payload was:`, update);
 
   // Send LINE push notification if status changed and user has lineUserId
-  if (status && updated.lineUserId) {
+  if (normalizedStatus && updated.lineUserId) {
     let msg = '';
-    if (status === 'active') {
+    if (normalizedStatus === 'active') {
       msg = '✅ บัญชีของคุณได้รับการอนุมัติแล้ว!\n\nคุณสามารถใช้งาน SmartSlip ได้แล้วตอนนี้ 🎉\nลองส่งรูปใบเสร็จมาได้เลย';
-    } else if (status === 'rejected') {
-      msg = '❌ บัญชีของคุณถูกปฏิเสธ\n\nหากมีข้อสงสัย กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/';
+    } else if (normalizedStatus === 'rejected') {
+      msg = '❌ บัญชีของคุณถูกยกเลิกการใช้งาน\n\nหากมีข้อสงสัย กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/';
+    } else if (normalizedStatus === 'restricted') {
+      msg = '⚠️ บัญชีของคุณถูกระงับการใช้งานชั่วคราว\n\nหากมีข้อสงสัย กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/';
     }
     if (msg) {
       try {
-        console.log(`📤 Sending LINE notification to ${updated.lineUserId} - Status: ${status}`);
+        console.log(`📤 Sending LINE notification to ${updated.lineUserId} - Status: ${normalizedStatus}`);
         await lineClient.pushMessage(updated.lineUserId, { type: 'text', text: msg });
         console.log(`✅ LINE notification sent successfully`);
       } catch (err) {
@@ -84,7 +98,7 @@ export async function PATCH(
       }
     }
   } else {
-    console.warn(`⚠️ Skipping LINE notification - status: ${status}, lineUserId: ${updated.lineUserId}`);
+    console.warn(`⚠️ Skipping LINE notification - status: ${normalizedStatus}, lineUserId: ${updated.lineUserId}`);
   }
 
   return corsResponse({ success: true, user: updated }, 200, request);
