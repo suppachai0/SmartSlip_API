@@ -22,7 +22,7 @@ export interface IUser extends Document {
   pendingReceipts?: Array<{ url: string; receivedAt: Date }>;
 
   role?: 'user' | 'admin';
-  status?: 'pending' | 'approved' | 'rejected';
+  status?: 'pending' | 'approved' | 'rejected' | 'active' | 'restricted';
 
   lastLoginAt?: Date;
   createdAt: Date;
@@ -56,7 +56,7 @@ const userSchema = new Schema<IUser>(
     ],
 
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'approved', 'rejected', 'active', 'restricted'], default: 'pending' },
 
     lastLoginAt: Date,
   },
