@@ -232,7 +232,7 @@ async function processReceiptInBackground(
       text: `✅ ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n📂 หมวดหมู่: ${category}${itemsText}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n❓ จะอนุมัติใบเสร็จตอนนี้เลยไหม?`,
       quickReply: {
         items: [
-          { type: 'action', action: { type: 'uri', label: '✅ อนุมัติเลย', uri: `https://smart-slip-nine.vercel.app/line-receipts?approve=${receiptId}` } },
+          { type: 'action', action: { type: 'message', label: '✅ อนุมัติเลย', text: `receipt_approve:${receiptId}` } },
           { type: 'action', action: { type: 'message', label: '⏳ ไว้ทีหลัง', text: `receipt_pending:${receiptId}` } },
         ],
       },
@@ -746,6 +746,33 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   if (event.message.type === 'text') {
     const text = (event.message as line.TextEventMessage).text.trim();
     console.log(`💬 Text message from ${userId}: ${text}`);
+
+    // Handle receipt approval (when user selects "อนุมัติเลย")
+    if (text.startsWith('receipt_approve:')) {
+      const receiptId = text.substring('receipt_approve:'.length);
+      try {
+        await connectToDatabase();
+        const receipt = await Receipt.findByIdAndUpdate(
+          receiptId,
+          { $set: { status: 'approved' } },
+          { new: true }
+        );
+        if (receipt) {
+          await sendLineReply(event.replyToken, [
+            {
+              type: 'text',
+              text: `✅ อนุมัติใบเสร็จแล้ว!\n\n💰 จำนวนเงิน: ฿${receipt.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n📌 สถานะ: ✅ อนุมัติแล้ว`,
+            },
+          ]);
+        } else {
+          await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบใบเสร็จ' }]);
+        }
+      } catch (err) {
+        console.error('❌ [APPROVE] Error:', err);
+        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ เกิดข้อผิดพลาด' }]);
+      }
+      return;
+    }
 
     // Handle receipt pending confirmation (when user selects "ไว้ทีหลัง")
     if (text.startsWith('receipt_pending:')) {
