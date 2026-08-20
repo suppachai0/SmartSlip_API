@@ -374,13 +374,6 @@ async function handleCustomDateRangeSummary(
         {
           type: 'text',
           text: `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 ไม่พบรายการใบเสร็จในช่วงเวลานี้\n💰 ยอดรวม: ฿0.00\n\n💡 ส่งรูปใบเสร็จเข้ามาในแชทนี้เพื่อเริ่มบันทึกค่าใช้จ่ายได้เลยครับ!`,
-          quickReply: {
-            items: [
-              { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
-              { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
-              { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
-            ],
-          },
         } as any,
       ]);
       return;
@@ -425,15 +418,6 @@ async function handleCustomDateRangeSummary(
       {
         type: 'text',
         text: messageText,
-        quickReply: {
-          items: [
-            { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
-            { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
-            { type: 'action', action: { type: 'message', label: '📆 ปีนี้', text: 'สรุป:ปีนี้' } },
-            { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
-            { type: 'action', action: { type: 'message', label: '🔍 อื่นๆ', text: 'สรุป:อื่นๆ' } },
-          ],
-        },
       } as any,
     ]);
   } catch (error: any) {
