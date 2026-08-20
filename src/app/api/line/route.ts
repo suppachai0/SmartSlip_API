@@ -263,6 +263,337 @@ async function processReceiptInBackground(
 }
 
 /**
+ * Parse custom Thai date range input (e.g., "สัปดาห์นี้", "เดือนที่แล้ว", "1-15 สิงหาคม")
+ * Returns { startDate, endDate, description } or null if not parseable
+ */
+function parseDateRangeInput(text: string): { startDate: Date; endDate: Date; description: string } | null {
+  const now = new Date();
+  const normalizedText = text.toLowerCase().trim();
+
+  // Thai month map
+  const thaiMonthMap: Record<string, number> = {
+    'มกราคม': 0, 'กุมภาพันธ์': 1, 'มีนาคม': 2, 'เมษายน': 3,
+    'พฤษภาคม': 4, 'มิถุนายน': 5, 'กรกฎาคม': 6, 'สิงหาคม': 7,
+    'กันยายน': 8, 'ตุลาคม': 9, 'พฤศจิกายน': 10, 'ธันวาคม': 11,
+  };
+
+  // "สัปดาห์นี้" - this week (last 7 days from today)
+  if (normalizedText.includes('สัปดาห์นี้')) {
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { startDate, endDate, description: 'สัปดาห์นี้ (7 วันที่ผ่านมา)' };
+  }
+
+  // "เดือนที่แล้ว" - last month
+  if (normalizedText.includes('เดือนที่แล้ว')) {
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1);
+    const startDate = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1, 0, 0, 0, 0);
+    const endDate = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+    const thaiMonthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    return { startDate, endDate, description: `เดือน${thaiMonthNames[prevMonth.getMonth()]} ${prevMonth.getFullYear() + 543}` };
+  }
+
+  // "เดือน[MonthName]" - specific month of current year (e.g., "เดือนมกราคม")
+  for (const [monthName, monthIdx] of Object.entries(thaiMonthMap)) {
+    if (normalizedText.includes(monthName)) {
+      const startDate = new Date(now.getFullYear(), monthIdx, 1, 0, 0, 0, 0);
+      const endDate = new Date(now.getFullYear(), monthIdx + 1, 0, 23, 59, 59, 999);
+      return { startDate, endDate, description: `${monthName} ${now.getFullYear() + 543}` };
+    }
+  }
+
+  // "วันที่ X ถึง Y [เดือน]" pattern (e.g., "1 ถึง 15 สิงหาคม" or "15-20 กันยายน")
+  const dateRangeMatch = text.match(/(\d+)\s*(?:ถึง|-|-)\s*(\d+)\s*([\u0E00-\u0E7F]+)?/u);
+  if (dateRangeMatch) {
+    const startDay = parseInt(dateRangeMatch[1]);
+    const endDay = parseInt(dateRangeMatch[2]);
+    const monthText = dateRangeMatch[3]?.trim();
+
+    let monthIdx = now.getMonth();
+    let year = now.getFullYear();
+
+    if (monthText) {
+      for (const [monthName, idx] of Object.entries(thaiMonthMap)) {
+        if (monthText.includes(monthName)) {
+          monthIdx = idx;
+          break;
+        }
+      }
+    }
+
+    const startDate = new Date(year, monthIdx, startDay, 0, 0, 0, 0);
+    const endDate = new Date(year, monthIdx, endDay, 23, 59, 59, 999);
+
+    const monthName = Object.keys(thaiMonthMap)[monthIdx];
+    return { startDate, endDate, description: `วันที่ ${startDay}-${endDay} ${monthName} ${year + 543}` };
+  }
+
+  // "สัปดาห์ที่แล้ว" - last week
+  if (normalizedText.includes('สัปดาห์ที่แล้ว')) {
+    const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 23, 59, 59, 999);
+    return { startDate, endDate, description: 'สัปดาห์ที่แล้ว' };
+  }
+
+  return null;
+}
+
+/**
+ * Handle custom date range summary request
+ */
+async function handleCustomDateRangeSummary(
+  userId: string,
+  dateRangeInput: string,
+  replyToken: string
+): Promise<void> {
+  try {
+    const dateRange = parseDateRangeInput(dateRangeInput);
+    if (!dateRange) {
+      // If parsing fails, let chatbot AI handle it
+      return null as any;
+    }
+
+    await connectToDatabase();
+
+    const user = await User.findOne({ lineUserId: userId }).select('_id');
+    const userIds = [userId, ...(user?._id ? [user._id.toString()] : [])];
+
+    const query: any = { userId: { $in: userIds } };
+    query.$or = [
+      { issueDate: { $gte: dateRange.startDate, $lte: dateRange.endDate } },
+      { createdAt: { $gte: dateRange.startDate, $lte: dateRange.endDate } },
+    ];
+
+    const receipts = await Receipt.find(query).sort({ issueDate: -1, createdAt: -1 });
+    const title = `สรุปยอดค่าใช้จ่าย`;
+    const periodText = dateRange.description;
+
+    if (receipts.length === 0) {
+      await sendLineReply(replyToken, [
+        {
+          type: 'text',
+          text: `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 ไม่พบรายการใบเสร็จในช่วงเวลานี้\n💰 ยอดรวม: ฿0.00\n\n💡 ส่งรูปใบเสร็จเข้ามาในแชทนี้เพื่อเริ่มบันทึกค่าใช้จ่ายได้เลยครับ!`,
+          quickReply: {
+            items: [
+              { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
+              { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
+              { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
+            ],
+          },
+        } as any,
+      ]);
+      return;
+    }
+
+    const totalAmount = receipts.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const count = receipts.length;
+
+    // Top 5 stores
+    const storeMap: Record<string, number> = {};
+    for (const r of receipts) {
+      const store = r.storeName || 'ไม่ระบุร้านค้า';
+      storeMap[store] = (storeMap[store] || 0) + (Number(r.amount) || 0);
+    }
+    const topStores = Object.entries(storeMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    let storeListText = '';
+    if (topStores.length > 0) {
+      storeListText = '\n\n🏪 ยอดตามร้านค้า/ผู้รับ:\n';
+      topStores.forEach(([store, amount], idx) => {
+        storeListText += `${idx + 1}. ${store}: ฿${amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      });
+    }
+
+    // Recent 5 receipts
+    const thaiMonthNames = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+    ];
+    let recentListText = '\n📋 รายการล่าสุด:\n';
+    receipts.slice(0, 5).forEach((r, idx) => {
+      const d = r.issueDate ? new Date(r.issueDate) : new Date(r.createdAt);
+      const dateStr = `${d.getDate()} ${thaiMonthNames[d.getMonth()]}`;
+      recentListText += `• ${r.storeName || 'LINE Upload'}: ฿${Number(r.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} (${dateStr})\n`;
+    });
+
+    const messageText = `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 จำนวนใบเสร็จ: ${count} ใบ\n💰 ยอดรวมทั้งหมด: ฿${totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${storeListText}${recentListText}\n🌐 ดูรายละเอียดเพิ่มเติมได้ที่เว็บไซต์:\nhttps://smart-slip-nine.vercel.app/`;
+
+    await sendLineReply(replyToken, [
+      {
+        type: 'text',
+        text: messageText,
+        quickReply: {
+          items: [
+            { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
+            { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
+            { type: 'action', action: { type: 'message', label: '📆 ปีนี้', text: 'สรุป:ปีนี้' } },
+            { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
+            { type: 'action', action: { type: 'message', label: '🔍 อื่นๆ', text: 'สรุป:อื่นๆ' } },
+          ],
+        },
+      } as any,
+    ]);
+  } catch (error: any) {
+    console.error('❌ [CUSTOM SUMMARY] Error:', error);
+    // Fall through to chatbot for error handling
+    return null as any;
+  }
+}
+
+/**
+ * Send Quick Reply to choose summary period
+ */
+async function sendSummaryPeriodMenu(replyToken: string): Promise<void> {
+  await sendLineReply(replyToken, [
+    {
+      type: 'text',
+      text: '📊 คุณต้องการดูสรุปยอดค่าใช้จ่ายในช่วงเวลาไหนดีครับ?',
+      quickReply: {
+        items: [
+          { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
+          { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
+          { type: 'action', action: { type: 'message', label: '📆 ปีนี้', text: 'สรุป:ปีนี้' } },
+          { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
+          { type: 'action', action: { type: 'message', label: '🔍 อื่นๆ', text: 'สรุป:อื่นๆ' } },
+        ],
+      },
+    } as any,
+  ]);
+}
+
+/**
+ * Handle summary for specific period (วันนี้, เดือนนี้, ปีนี้, ทั้งหมด)
+ */
+async function handleSummaryPeriod(
+  userId: string,
+  periodKey: 'today' | 'month' | 'year' | 'all',
+  replyToken: string
+): Promise<void> {
+  try {
+    await connectToDatabase();
+
+    const user = await User.findOne({ lineUserId: userId }).select('_id');
+    const userIds = [userId, ...(user?._id ? [user._id.toString()] : [])];
+
+    const now = new Date();
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+    let title = '';
+    let periodText = '';
+
+    const thaiMonthNames = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+
+    if (periodKey === 'today') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      title = 'สรุปยอดวันนี้';
+      periodText = `${now.getDate()} ${thaiMonthNames[now.getMonth()]} ${now.getFullYear() + 543}`;
+    } else if (periodKey === 'month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      title = 'สรุปยอดเดือนนี้';
+      periodText = `${thaiMonthNames[now.getMonth()]} ${now.getFullYear() + 543}`;
+    } else if (periodKey === 'year') {
+      startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+      title = 'สรุปยอดปีนี้';
+      periodText = `ปี ${now.getFullYear() + 543}`;
+    } else {
+      title = 'สรุปยอดทั้งหมด';
+      periodText = 'ทุกช่วงเวลา';
+    }
+
+    const query: any = { userId: { $in: userIds } };
+    if (startDate && endDate) {
+      query.$or = [
+        { issueDate: { $gte: startDate, $lte: endDate } },
+        { createdAt: { $gte: startDate, $lte: endDate } }
+      ];
+    }
+
+    const receipts = await Receipt.find(query).sort({ issueDate: -1, createdAt: -1 });
+
+    if (receipts.length === 0) {
+      await sendLineReply(replyToken, [
+        {
+          type: 'text',
+          text: `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 ไม่พบรายการใบเสร็จในช่วงเวลานี้\n💰 ยอดรวม: ฿0.00\n\n💡 ส่งรูปใบเสร็จเข้ามาในแชทนี้เพื่อเริ่มบันทึกค่าใช้จ่ายได้เลยครับ!`,
+          quickReply: {
+            items: [
+              { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
+              { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
+              { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
+            ],
+          },
+        } as any,
+      ]);
+      return;
+    }
+
+    const totalAmount = receipts.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const count = receipts.length;
+
+    // Top 5 stores
+    const storeMap: Record<string, number> = {};
+    for (const r of receipts) {
+      const store = r.storeName || 'ไม่ระบุร้านค้า';
+      storeMap[store] = (storeMap[store] || 0) + (Number(r.amount) || 0);
+    }
+    const topStores = Object.entries(storeMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    let storeListText = '';
+    if (topStores.length > 0) {
+      storeListText = '\n\n🏪 ยอดตามร้านค้า/ผู้รับ:\n';
+      topStores.forEach(([store, amount], idx) => {
+        storeListText += `${idx + 1}. ${store}: ฿${amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      });
+    }
+
+    // Recent 5 receipts
+    let recentListText = '\n📋 รายการล่าสุด:\n';
+    receipts.slice(0, 5).forEach((r, idx) => {
+      const d = r.issueDate ? new Date(r.issueDate) : new Date(r.createdAt);
+      const dateStr = `${d.getDate()} ${thaiMonthNames[d.getMonth()]}`;
+      recentListText += `• ${r.storeName || 'LINE Upload'}: ฿${Number(r.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} (${dateStr})\n`;
+    });
+
+    const messageText = `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 จำนวนใบเสร็จ: ${count} ใบ\n💰 ยอดรวมทั้งหมด: ฿${totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${storeListText}${recentListText}\n🌐 ดูรายละเอียดเพิ่มเติมได้ที่เว็บไซต์:\nhttps://smart-slip-nine.vercel.app/`;
+
+    await sendLineReply(replyToken, [
+      {
+        type: 'text',
+        text: messageText,
+        quickReply: {
+          items: [
+            { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
+            { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
+            { type: 'action', action: { type: 'message', label: '📆 ปีนี้', text: 'สรุป:ปีนี้' } },
+            { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
+            { type: 'action', action: { type: 'message', label: '🔍 อื่นๆ', text: 'สรุป:อื่นๆ' } },
+          ],
+        },
+      } as any,
+    ]);
+  } catch (error: any) {
+    console.error('❌ [SUMMARY] Error generating period summary:', error);
+    await sendLineReply(replyToken, [
+      {
+        type: 'text',
+        text: '❌ เกิดข้อผิดพลาดในการดึงข้อมูลสรุปยอด ลองใหม่อีกครั้งนะครับ',
+      },
+    ]);
+  }
+}
+
+/**
  * Answer receipt/finance questions using Gemini AI with user's receipt data as context
  */
 async function answerReceiptQuestion(
@@ -275,7 +606,9 @@ async function answerReceiptQuestion(
     await connectToDatabase();
 
     // Fetch user's recent receipts
-    const receipts = await Receipt.find({ userId })
+    const user = await User.findOne({ lineUserId: userId }).select('_id');
+    const userIds = [userId, ...(user?._id ? [user._id.toString()] : [])];
+    const receipts = await Receipt.find({ userId: { $in: userIds } })
       .sort({ createdAt: -1 })
       .limit(50)
       .select('storeName amount currency issueDate items status createdAt');
@@ -433,6 +766,60 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     const text = (event.message as line.TextEventMessage).text.trim();
     console.log(`💬 Text message from ${userId}: ${text}`);
 
+    // Check if user clicked or typed summary request (from Rich Menu or message)
+    const summaryTriggers = [
+      'ฉันต้องการสรุปยอด',
+      'สรุปยอด',
+      'สรุปค่าใช้จ่าย',
+      'ดูสรุปยอด',
+      'สรุปยอดเงิน',
+      'สรุปยอดรายจ่าย',
+      'เมนูสรุปยอด',
+      'ขอสรุปยอด',
+      'สรุป',
+    ];
+    if (summaryTriggers.includes(text) || text.startsWith('สรุปเมนู')) {
+      await sendSummaryPeriodMenu(event.replyToken);
+      return;
+    }
+
+    // Handle Summary Period Selections
+    if (text === 'สรุป:วันนี้' || text === 'วันนี้') {
+      await handleSummaryPeriod(userId, 'today', event.replyToken);
+      return;
+    }
+    if (text === 'สรุป:เดือนนี้' || text === 'เดือนนี้') {
+      await handleSummaryPeriod(userId, 'month', event.replyToken);
+      return;
+    }
+    if (text === 'สรุป:ปีนี้' || text === 'ปีนี้') {
+      await handleSummaryPeriod(userId, 'year', event.replyToken);
+      return;
+    }
+    if (text === 'สรุป:ทั้งหมด' || text === 'สรุปยอดทั้งหมด' || text === 'ทั้งหมด') {
+      await handleSummaryPeriod(userId, 'all', event.replyToken);
+      return;
+    }
+    if (text === 'สรุป:อื่นๆ' || text === 'อื่นๆ') {
+      await sendLineReply(event.replyToken, [
+        {
+          type: 'text',
+          text: '✍️ โปรดระบุช่วงเวลาที่ต้องการให้สรุป เช่น:\n\n• สัปดาห์นี้\n• เดือนที่แล้ว\n• เดือนมกราคม\n• วันที่ 1 ถึง 15 สิงหาคม\n• สรุปยอดหมวดอาหาร\n\nหรือพิมพ์ถามสรุปค่าใช้จ่ายที่ต้องการได้เลยครับ!',
+        },
+      ]);
+      // Mark user state to expect custom date range input
+      try {
+        await User.updateOne(
+          { lineUserId: userId },
+          { $set: { pendingCustomSummary: true } },
+          { upsert: true }
+        );
+      } catch (err) {
+        console.warn('⚠️ Could not set pendingCustomSummary flag:', err);
+      }
+      return;
+    }
+
     // Check if this is a category selection for a pending receipt
     const categoryMap: Record<string, string> = {
       '1': 'อาหาร', 'อาหาร': 'อาหาร',
@@ -448,6 +835,13 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
       const user = await User.findOne({ lineUserId: userId }).select(
         'pendingReceipts googleSheetId'
       );
+      // Clear pending custom summary flag if set
+      if (user && (user as any).pendingCustomSummary) {
+        await User.updateOne(
+          { lineUserId: userId },
+          { $unset: { pendingCustomSummary: '' } }
+        );
+      }
 
       // Filter valid (non-expired) pending receipts
       const now = Date.now();
@@ -475,6 +869,31 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
         // All expired — clean up
         await User.updateOne({ lineUserId: userId }, { $set: { pendingReceipts: [] } });
       }
+    }
+
+    // Check if user is expecting custom date range input for summary
+    try {
+      await connectToDatabase();
+      const userRecord = await User.findOne({ lineUserId: userId }).select('pendingCustomSummary');
+      if (userRecord && (userRecord as any).pendingCustomSummary === true) {
+        // Try to parse as custom date range
+        const customResult = await handleCustomDateRangeSummary(userId, text, event.replyToken);
+        if (customResult !== null) {
+          // Successfully handled as custom date range
+          await User.updateOne(
+            { lineUserId: userId },
+            { $unset: { pendingCustomSummary: '' } }
+          );
+          return;
+        }
+        // If custom date range parsing fails, clear flag and continue to chatbot
+        await User.updateOne(
+          { lineUserId: userId },
+          { $unset: { pendingCustomSummary: '' } }
+        );
+      }
+    } catch (err) {
+      console.warn('⚠️ Error checking pendingCustomSummary:', err);
     }
 
     // Normal chatbot Q&A

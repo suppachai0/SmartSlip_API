@@ -21,6 +21,9 @@ export interface IUser extends Document {
   // Pending receipts waiting for category selection (supports multiple images sent at once)
   pendingReceipts?: Array<{ url: string; receivedAt: Date }>;
 
+  // Flag to indicate user is expected to provide custom date range for summary
+  pendingCustomSummary?: boolean;
+
   role?: 'user' | 'admin' | 'clerk';
   status?: 'pending' | 'approved' | 'rejected' | 'active' | 'restricted';
 
@@ -54,6 +57,8 @@ const userSchema = new Schema<IUser>(
         receivedAt: Date,
       },
     ],
+
+    pendingCustomSummary: { type: Boolean, default: false },
 
     role: { type: String, enum: ['user', 'admin', 'clerk'], default: 'user' },
     status: { type: String, enum: ['pending', 'approved', 'rejected', 'active', 'restricted'], default: 'pending' },
