@@ -232,8 +232,8 @@ async function processReceiptInBackground(
       text: `✅ ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n📂 หมวดหมู่: ${category}${itemsText}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n❓ จะอนุมัติใบเสร็จตอนนี้เลยไหม?`,
       quickReply: {
         items: [
-          { type: 'action', action: { type: 'message', label: '✅ อนุมัติเลย', text: `receipt_approve:${receiptId}` } },
-          { type: 'action', action: { type: 'message', label: '⏳ ไว้ทีหลัง', text: `receipt_pending:${receiptId}` } },
+          { type: 'action', action: { type: 'postback', label: '✅ อนุมัติเลย', data: `action=approve_receipt&receiptId=${receiptId}` } },
+          { type: 'action', action: { type: 'postback', label: '⏳ ไว้ทีหลัง', data: `action=pending_receipt&receiptId=${receiptId}` } },
         ],
       },
     } as any);
@@ -709,6 +709,55 @@ ${JSON.stringify(receiptSummary, null, 2)}
  * Handles image messages with OCR extraction and storage
  */
 async function processLineEvent(event: line.WebhookEvent): Promise<void> {
+  // Handle postback events (from quick reply buttons with postback action)
+  if (event.type === 'postback') {
+    const userId = event.source.userId;
+    if (!userId) return;
+
+    const postbackData = (event as any).postback?.data || '';
+    console.log(`📮 Postback from ${userId}: ${postbackData}`);
+
+    // Parse postback data (format: "action=approve_receipt&receiptId=...")
+    const params = new URLSearchParams(postbackData);
+    const action = params.get('action');
+    const receiptId = params.get('receiptId');
+
+    if (action === 'approve_receipt' && receiptId) {
+      try {
+        await connectToDatabase();
+        const receipt = await Receipt.findByIdAndUpdate(
+          receiptId,
+          { $set: { status: 'approved' } },
+          { new: true }
+        );
+        if (receipt) {
+          await sendLineReply(event.replyToken, [
+            {
+              type: 'text',
+              text: `✅ อนุมัติใบเสร็จแล้ว!\n\n💰 จำนวนเงิน: ฿${receipt.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n📌 สถานะ: ✅ อนุมัติแล้ว`,
+            },
+          ]);
+        } else {
+          await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบใบเสร็จ' }]);
+        }
+      } catch (err) {
+        console.error('❌ [POSTBACK APPROVE] Error:', err);
+        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ เกิดข้อผิดพลาด กรุณาลองใหม่' }]);
+      }
+      return;
+    }
+
+    if (action === 'pending_receipt' && receiptId) {
+      await sendLineReply(event.replyToken, [
+        {
+          type: 'text',
+          text: '⏳ เก็บไว้ในสถานะรอตรวจสอบแล้ว\n\n📌 สามารถไปอนุมัติได้ที่เว็บไซต์เมื่อพร้อมครับ\nhttps://smart-slip-nine.vercel.app/line-receipts',
+        },
+      ]);
+      return;
+    }
+  }
+
   // Only handle message events
   if (event.type !== 'message') {
     console.log(`⏭️ Ignoring ${event.type} event`);
@@ -746,56 +795,6 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   if (event.message.type === 'text') {
     const text = (event.message as line.TextEventMessage).text.trim();
     console.log(`💬 Text message from ${userId}: ${text}`);
-
-    // Handle receipt approval (when user selects "อนุมัติเลย")
-    if (text.startsWith('receipt_approve:')) {
-      let receiptId = text.substring('receipt_approve:'.length).trim();
-      // Extract only the ObjectId part (24 hex characters) if there's extra data
-      const objectIdMatch = receiptId.match(/^[a-f0-9]{24}/i);
-      if (objectIdMatch) {
-        receiptId = objectIdMatch[0];
-      }
-      
-      if (!receiptId || receiptId.length !== 24) {
-        console.warn('⚠️ Invalid receipt ID:', text.substring('receipt_approve:'.length));
-        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบรหัสใบเสร็จ' }]);
-        return;
-      }
-      try {
-        await connectToDatabase();
-        const receipt = await Receipt.findByIdAndUpdate(
-          receiptId,
-          { $set: { status: 'approved' } },
-          { new: true }
-        );
-        if (receipt) {
-          await sendLineReply(event.replyToken, [
-            {
-              type: 'text',
-              text: `✅ อนุมัติใบเสร็จแล้ว!\n\n💰 จำนวนเงิน: ฿${receipt.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n📌 สถานะ: ✅ อนุมัติแล้ว`,
-            },
-          ]);
-        } else {
-          await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบใบเสร็จ' }]);
-        }
-      } catch (err) {
-        console.error('❌ [APPROVE] Error:', err);
-        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ เกิดข้อผิดพลาด กรุณาลองใหม่' }]);
-      }
-      return;
-    }
-
-    // Handle receipt pending confirmation (when user selects "ไว้ทีหลัง")
-    if (text.startsWith('receipt_pending:')) {
-      const receiptId = text.substring('receipt_pending:'.length);
-      await sendLineReply(event.replyToken, [
-        {
-          type: 'text',
-          text: '⏳ เก็บไว้ในสถานะรอตรวจสอบแล้ว\n\n📌 สามารถไปอนุมัติได้ที่เว็บไซต์เมื่อพร้อมครับ\nhttps://smart-slip-nine.vercel.app/line-receipts',
-        },
-      ]);
-      return;
-    }
 
     // Check if user clicked or typed summary request (from Rich Menu or message)
     const summaryTriggers = [
