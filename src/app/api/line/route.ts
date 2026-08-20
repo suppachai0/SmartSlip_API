@@ -232,8 +232,8 @@ async function processReceiptInBackground(
       text: `✅ ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n📂 หมวดหมู่: ${category}${itemsText}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n❓ จะอนุมัติใบเสร็จตอนนี้เลยไหม?`,
       quickReply: {
         items: [
-          { type: 'action', action: { type: 'postback', label: '✅ อนุมัติเลย', data: `action=approve_receipt&receiptId=${receiptId}` } },
-          { type: 'action', action: { type: 'postback', label: '⏳ ไว้ทีหลัง', data: `action=pending_receipt&receiptId=${receiptId}` } },
+          { type: 'action', action: { type: 'postback', label: '✅ อนุมัติเลย', data: `action=approve&receiptId=${receiptId}` } },
+          { type: 'action', action: { type: 'postback', label: '⏳ ไว้ทีหลัง', data: `action=pending&receiptId=${receiptId}` } },
         ],
       },
     } as any);
@@ -717,20 +717,29 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
     const postbackData = (event as any).postback?.data || '';
     console.log(`📮 Postback from ${userId}: ${postbackData}`);
 
-    // Parse postback data (format: "action=approve_receipt&receiptId=...")
+    // Parse postback data (format: "action=approve&receiptId=...")
     const params = new URLSearchParams(postbackData);
     const action = params.get('action');
     const receiptId = params.get('receiptId');
+    
+    console.log(`📮 Parsed - action: "${action}", receiptId: "${receiptId}"`);
 
-    if (action === 'approve_receipt' && receiptId) {
+    if (action === 'approve' && receiptId) {
+      console.log(`✅ Processing approval for receipt ${receiptId}`);
       try {
         await connectToDatabase();
+        console.log(`✅ Connected to database, updating receipt status`);
+        
         const receipt = await Receipt.findByIdAndUpdate(
           receiptId,
           { $set: { status: 'approved' } },
           { new: true }
         );
+        
+        console.log(`✅ Update result - Found: ${!!receipt}, Status: ${receipt?.status}`);
+        
         if (receipt) {
+          console.log(`✅ Receipt found and updated to approved`);
           await sendLineReply(event.replyToken, [
             {
               type: 'text',
@@ -738,16 +747,18 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
             },
           ]);
         } else {
+          console.warn(`⚠️ Receipt not found for ID: ${receiptId}`);
           await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบใบเสร็จ' }]);
         }
       } catch (err) {
         console.error('❌ [POSTBACK APPROVE] Error:', err);
-        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ เกิดข้อผิดพลาด กรุณาลองใหม่' }]);
+        await sendLineReply(event.replyToken, [{ type: 'text', text: `❌ เกิดข้อผิดพลาด: ${err}` }]);
       }
       return;
     }
 
-    if (action === 'pending_receipt' && receiptId) {
+    if (action === 'pending' && receiptId) {
+      console.log(`⏳ Processing pending for receipt ${receiptId}`);
       await sendLineReply(event.replyToken, [
         {
           type: 'text',
@@ -756,6 +767,9 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
       ]);
       return;
     }
+    
+    console.warn(`⚠️ Postback event received but action not recognized: action="${action}", receiptId="${receiptId}"`);
+    return;
   }
 
   // Only handle message events
