@@ -712,23 +712,48 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   // Handle postback events (from quick reply buttons with postback action)
   if (event.type === 'postback') {
     const userId = event.source.userId;
-    if (!userId) return;
+    if (!userId) {
+      console.warn(`⚠️ Postback event received but no userId`);
+      return;
+    }
 
     const postbackData = (event as any).postback?.data || '';
-    console.log(`📮 Postback from ${userId}: ${postbackData}`);
+    console.log(`📮 [POSTBACK] Received from userId: ${userId}`);
+    console.log(`📮 [POSTBACK] Raw data: "${postbackData}"`);
+    console.log(`📮 [POSTBACK] Data length: ${postbackData.length} chars`);
 
     // Parse postback data (format: "action=approve&receiptId=...")
-    const params = new URLSearchParams(postbackData);
-    const action = params.get('action');
-    const receiptId = params.get('receiptId');
+    let action: string | null = null;
+    let receiptId: string | null = null;
     
-    console.log(`📮 Parsed - action: "${action}", receiptId: "${receiptId}"`);
+    try {
+      const params = new URLSearchParams(postbackData);
+      action = params.get('action');
+      receiptId = params.get('receiptId');
+      console.log(`📮 [POSTBACK] Parsed - action: "${action}", receiptId: "${receiptId}"`);
+      
+      if (!receiptId) {
+        console.warn(`⚠️ [POSTBACK] receiptId is missing from parsed data`);
+        console.warn(`📮 [POSTBACK] Full params: ${JSON.stringify(Object.fromEntries(params))}`);
+      }
+    } catch (parseErr) {
+      console.error(`❌ [POSTBACK] Failed to parse data:`, parseErr);
+      return;
+    }
 
     if (action === 'approve' && receiptId) {
-      console.log(`✅ Processing approval for receipt ${receiptId}`);
+      console.log(`✅ [POSTBACK] Processing APPROVE for receipt: ${receiptId}`);
       try {
+        // Validate receiptId format (MongoDB ObjectId is 24 hex chars)
+        if (!/^[0-9a-f]{24}$/i.test(receiptId)) {
+          console.error(`❌ [POSTBACK] Invalid receiptId format: ${receiptId}`);
+          await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่สามารถอนุมัติได้ - ID ใบเสร็จไม่ถูกต้อง' }]);
+          return;
+        }
+        
+        console.log(`✅ [POSTBACK] receiptId format valid, connecting to database...`);
         await connectToDatabase();
-        console.log(`✅ Connected to database, updating receipt status`);
+        console.log(`✅ [POSTBACK] Database connected, updating status...`);
         
         const receipt = await Receipt.findByIdAndUpdate(
           receiptId,
@@ -736,39 +761,59 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
           { new: true }
         );
         
-        console.log(`✅ Update result - Found: ${!!receipt}, Status: ${receipt?.status}`);
+        console.log(`📊 [POSTBACK] Update result:`);
+        console.log(`   - Receipt found: ${!!receipt}`);
+        console.log(`   - New status: ${receipt?.status}`);
+        console.log(`   - Amount: ${receipt?.amount}`);
         
         if (receipt) {
-          console.log(`✅ Receipt found and updated to approved`);
+          console.log(`✅ [POSTBACK] Receipt successfully updated`);
           await sendLineReply(event.replyToken, [
             {
               type: 'text',
               text: `✅ อนุมัติใบเสร็จแล้ว!\n\n💰 จำนวนเงิน: ฿${receipt.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n📌 สถานะ: ✅ อนุมัติแล้ว`,
             },
           ]);
+          console.log(`✅ [POSTBACK] Confirmation message sent to LINE`);
         } else {
-          console.warn(`⚠️ Receipt not found for ID: ${receiptId}`);
-          await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบใบเสร็จ' }]);
+          console.warn(`⚠️ [POSTBACK] Receipt not found after update - receiptId: ${receiptId}`);
+          console.warn(`⚠️ [POSTBACK] This could mean: 1) receiptId doesn't exist, 2) wrong database, 3) findByIdAndUpdate failed`);
+          await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบใบเสร็จ - อาจถูกลบแล้ว' }]);
         }
-      } catch (err) {
-        console.error('❌ [POSTBACK APPROVE] Error:', err);
-        await sendLineReply(event.replyToken, [{ type: 'text', text: `❌ เกิดข้อผิดพลาด: ${err}` }]);
+      } catch (err: any) {
+        console.error(`❌ [POSTBACK APPROVE] Exception occurred:`);
+        console.error(`   - Message: ${err?.message}`);
+        console.error(`   - Code: ${err?.code}`);
+        console.error(`   - Stack: ${err?.stack}`);
+        try {
+          await sendLineReply(event.replyToken, [{ type: 'text', text: `❌ เกิดข้อผิดพลาด: ${err?.message || 'Unknown error'}` }]);
+        } catch (replyErr) {
+          console.error(`❌ [POSTBACK] Failed to send error message to LINE:`, replyErr);
+        }
       }
       return;
     }
 
     if (action === 'pending' && receiptId) {
-      console.log(`⏳ Processing pending for receipt ${receiptId}`);
-      await sendLineReply(event.replyToken, [
-        {
-          type: 'text',
-          text: '⏳ เก็บไว้ในสถานะรอตรวจสอบแล้ว\n\n📌 สามารถไปอนุมัติได้ที่เว็บไซต์เมื่อพร้อมครับ\nhttps://smart-slip-nine.vercel.app/line-receipts',
-        },
-      ]);
+      console.log(`⏳ [POSTBACK] Processing PENDING for receipt: ${receiptId}`);
+      try {
+        await sendLineReply(event.replyToken, [
+          {
+            type: 'text',
+            text: '⏳ เก็บไว้ในสถานะรอตรวจสอบแล้ว\n\n📌 สามารถไปอนุมัติได้ที่เว็บไซต์เมื่อพร้อมครับ\nhttps://smart-slip-nine.vercel.app/line-receipts',
+          },
+        ]);
+        console.log(`✅ [POSTBACK] Pending message sent to LINE`);
+      } catch (err) {
+        console.error(`❌ [POSTBACK PENDING] Failed:`, err);
+      }
       return;
     }
     
-    console.warn(`⚠️ Postback event received but action not recognized: action="${action}", receiptId="${receiptId}"`);
+    console.warn(`⚠️ [POSTBACK] Postback received but action/receiptId invalid:`);
+    console.warn(`   - action: "${action}"`);
+    console.warn(`   - receiptId: "${receiptId}"`);
+    console.warn(`   - Raw data: "${postbackData}"`);
     return;
   }
 
