@@ -555,15 +555,6 @@ async function handleSummaryPeriod(
       {
         type: 'text',
         text: messageText,
-        quickReply: {
-          items: [
-            { type: 'action', action: { type: 'message', label: '📅 วันนี้', text: 'สรุป:วันนี้' } },
-            { type: 'action', action: { type: 'message', label: '🗓️ เดือนนี้', text: 'สรุป:เดือนนี้' } },
-            { type: 'action', action: { type: 'message', label: '📆 ปีนี้', text: 'สรุป:ปีนี้' } },
-            { type: 'action', action: { type: 'message', label: '📈 สรุปยอดทั้งหมด', text: 'สรุป:ทั้งหมด' } },
-            { type: 'action', action: { type: 'message', label: '🔍 อื่นๆ', text: 'สรุป:อื่นๆ' } },
-          ],
-        },
       } as any,
     ]);
   } catch (error: any) {
