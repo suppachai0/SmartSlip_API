@@ -174,7 +174,7 @@ async function processReceiptInBackground(
       storeName: slipData.receiver || 'LINE Upload',
       amount: slipData.amount,
       currency: 'THB',
-      status: slipData.confidence === 'high' ? 'approved' : 'pending',
+      status: 'reviewing',
       userId,
       roleContext,
       imageURL: storageResult.publicUrl,
@@ -229,8 +229,14 @@ async function processReceiptInBackground(
 
     await lineClient.pushMessage(userId, {
       type: 'text',
-      text: `✅ ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n📂 หมวดหมู่: ${category}${itemsText}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n🌐 สามารถดูเพิ่มเติมได้ที่เว็บไซต์\nhttps://smart-slip-nine.vercel.app/`,
-    });
+      text: `✅ ประมวลผลสำเร็จ!\n\n💰 จำนวนเงิน: ${amountText}\n👤 ผู้ส่ง: ${slipData.sender || 'ไม่ทราบ'}\n🏢 ผู้รับ: ${slipData.receiver || 'ไม่ทราบ'}\n📅 วันที่: ${slipData.date}\n📂 หมวดหมู่: ${category}${itemsText}\n\n☁️ บันทึกใน Cloud Storage แล้ว ✅\n\n❓ จะอนุมัติใบเสร็จตอนนี้เลยไหม?`,
+      quickReply: {
+        items: [
+          { type: 'action', action: { type: 'uri', label: '✅ อนุมัติเลย', uri: `https://smart-slip-nine.vercel.app/line-receipts?approve=${receiptId}` } },
+          { type: 'action', action: { type: 'message', label: '⏳ ไว้ทีหลัง', text: `receipt_pending:${receiptId}` } },
+        ],
+      },
+    } as any);
 
     console.log('✅ [BG] DetailedResult sent via pushMessage');
     console.log(`\n✨ [BACKGROUND COMPLETE] Receipt ID: ${receiptId}\n`);
@@ -740,6 +746,18 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   if (event.message.type === 'text') {
     const text = (event.message as line.TextEventMessage).text.trim();
     console.log(`💬 Text message from ${userId}: ${text}`);
+
+    // Handle receipt pending confirmation (when user selects "ไว้ทีหลัง")
+    if (text.startsWith('receipt_pending:')) {
+      const receiptId = text.substring('receipt_pending:'.length);
+      await sendLineReply(event.replyToken, [
+        {
+          type: 'text',
+          text: '⏳ เก็บไว้ในสถานะรอตรวจสอบแล้ว\n\n📌 สามารถไปอนุมัติได้ที่เว็บไซต์เมื่อพร้อมครับ\nhttps://smart-slip-nine.vercel.app/line-receipts',
+        },
+      ]);
+      return;
+    }
 
     // Check if user clicked or typed summary request (from Rich Menu or message)
     const summaryTriggers = [
