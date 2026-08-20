@@ -749,7 +749,18 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
 
     // Handle receipt approval (when user selects "อนุมัติเลย")
     if (text.startsWith('receipt_approve:')) {
-      const receiptId = text.substring('receipt_approve:'.length);
+      let receiptId = text.substring('receipt_approve:'.length).trim();
+      // Extract only the ObjectId part (24 hex characters) if there's extra data
+      const objectIdMatch = receiptId.match(/^[a-f0-9]{24}/i);
+      if (objectIdMatch) {
+        receiptId = objectIdMatch[0];
+      }
+      
+      if (!receiptId || receiptId.length !== 24) {
+        console.warn('⚠️ Invalid receipt ID:', text.substring('receipt_approve:'.length));
+        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ ไม่พบรหัสใบเสร็จ' }]);
+        return;
+      }
       try {
         await connectToDatabase();
         const receipt = await Receipt.findByIdAndUpdate(
@@ -769,7 +780,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
         }
       } catch (err) {
         console.error('❌ [APPROVE] Error:', err);
-        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ เกิดข้อผิดพลาด' }]);
+        await sendLineReply(event.replyToken, [{ type: 'text', text: '❌ เกิดข้อผิดพลาด กรุณาลองใหม่' }]);
       }
       return;
     }
