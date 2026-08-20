@@ -840,25 +840,31 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   await connectToDatabase();
   const adminIds = (process.env.ADMIN_LINE_USER_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
   const isAdmin = adminIds.includes(userId);
-  const userRecord = await User.findOneAndUpdate(
+  
+  // Step 1: Upsert user on first login
+  await User.findOneAndUpdate(
     { lineUserId: userId },
     isAdmin
       ? { $set: { role: 'admin', status: 'approved' } }
       : { $setOnInsert: { role: 'user', status: 'pending' } },
-    { upsert: true, returnDocument: 'after' }
-  ).select('status role');
+    { upsert: true }
+  );
+  
+  // Step 2: Reload user to get CURRENT status (might be updated by Admin Dashboard)
+  const userRecord = await User.findOne({ lineUserId: userId }).select('status role');
   const userStatus = (userRecord?.status as string) ?? 'pending';
-  console.log(`🔍 [DEBUG] User ${userId} status in DB: "${userStatus}"`);
+  console.log(`🔍 [DEBUG] User ${userId} current status in DB: "${userStatus}"`);
   console.log(`🔍 [DEBUG] Role: "${userRecord?.role}"`);
+  
   if (userStatus !== 'active' && userStatus !== 'approved') {
     const msg = userStatus === 'rejected'
       ? '🚫 บัญชีของคุณถูกปฏิเสธ กรุณาติดต่อแอดมิน\nhttps://smart-slip-nine.vercel.app/'
       : '⏳ บัญชีของคุณกำลังรอการอนุมัติจากแอดมิน\n\nหากต้องการใช้งาน ติดต่อแอดมินได้ที่\nhttps://smart-slip-nine.vercel.app/';
-    console.log(`📨 [BLOCK] Status check failed - Sending: ${msg.split('\n')[0]}`);
+    console.log(`📨 [BLOCK] Status "${userStatus}" - Sending: ${msg.split('\n')[0]}`);
     await sendLineReply(event.replyToken, [{ type: 'text', text: msg }]);
     return;
   }
-  console.log(`✅ [ALLOW] User approved/active - Processing message normally`);
+  console.log(`✅ [ALLOW] User status "${userStatus}" - Processing message normally`);
 
   // Handle text messages
   if (event.message.type === 'text') {
