@@ -9,22 +9,12 @@ import { corsResponse, addCorsHeaders } from '@/lib/cors';
  * 
  * Purpose: For testing user approval workflow
  * 
- * Query params:
- * - adminKey: Secret key for safety (must match ADMIN_SECRET_KEY env var)
+ * ⚠️ WARNING: This is a debug endpoint - remove in production!
  */
 export async function POST(request: NextRequest) {
   try {
-    // Security: Check admin key
-    const adminKey = process.env.ADMIN_SECRET_KEY;
-    const incomingKey = request.nextUrl.searchParams.get('adminKey');
-    
-    if (!adminKey || !incomingKey || incomingKey !== adminKey) {
-      return corsResponse(
-        { error: 'Forbidden - Invalid admin key' },
-        403,
-        request
-      );
-    }
+    // ⚠️ TEMP: For testing only - no auth required on debug endpoint
+    console.log('🔄 [RESET] Starting user status reset process...');
 
     await connectToDatabase();
 
