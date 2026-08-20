@@ -11,6 +11,11 @@ import { corsResponse, addCorsHeaders } from '@/lib/cors';
  * 
  * ⚠️ WARNING: This is a debug endpoint - remove in production!
  */
+// Allow GET for easy browser testing
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   try {
     // ⚠️ TEMP: For testing only - no auth required on debug endpoint
