@@ -709,6 +709,16 @@ ${JSON.stringify(receiptSummary, null, 2)}
  * Handles image messages with OCR extraction and storage
  */
 async function processLineEvent(event: line.WebhookEvent): Promise<void> {
+  // DEBUG: Log all events
+  console.log(`\n🔔 [EVENT] Type received: "${event.type}" (expected: postback/message)`);
+  if (event.type === 'postback') {
+    console.log(`🎯 [EVENT] This is a POSTBACK event!`);
+  } else if (event.type === 'message') {
+    console.log(`📝 [EVENT] This is a MESSAGE event`);
+  } else {
+    console.log(`❓ [EVENT] Unknown event type: ${event.type}`);
+  }
+
   // Handle postback events (from quick reply buttons with postback action)
   if (event.type === 'postback') {
     const userId = event.source.userId;
