@@ -557,22 +557,26 @@ async function handleSummaryPeriod(
 
     const messageText = `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 จำนวนใบเสร็จ: ${count} ใบ\n💰 ยอดรวมทั้งหมด: ฿${totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${storeListText}${recentListText}`;
 
-    // Send summary text + button to dashboard (avoid URL preview conflicts)
+    // Send summary text + template message with button
     await sendLineReply(replyToken, [
       {
         type: 'text',
         text: messageText,
       } as any,
       {
-        type: 'buttons',
-        text: '📱 ดูรายละเอียดเพิ่มเติมในแดชบอร์ด SmartSlip',
-        actions: [
-          {
-            type: 'uri',
-            label: '🔗 เปิดแดชบอร์ด',
-            uri: 'https://smart-slip-nine.vercel.app/',
-          }
-        ],
+        type: 'template',
+        altText: '📱 ดูรายละเอียดเพิ่มเติมในแดชบอร์ด SmartSlip',
+        template: {
+          type: 'buttons',
+          text: '📱 ดูรายละเอียดเพิ่มเติมในแดชบอร์ด SmartSlip',
+          actions: [
+            {
+              type: 'uri',
+              label: '🔗 เปิดแดชบอร์ด',
+              uri: 'https://smart-slip-nine.vercel.app/',
+            }
+          ],
+        },
       } as any,
     ]);
   } catch (error: any) {
