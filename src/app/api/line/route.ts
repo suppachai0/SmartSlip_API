@@ -841,12 +841,15 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
   const adminIds = (process.env.ADMIN_LINE_USER_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
   const isAdmin = adminIds.includes(userId);
   
-  // Step 1: Upsert user on first login
+  // Step 1: Upsert user on first login (don't override existing status)
   await User.findOneAndUpdate(
     { lineUserId: userId },
-    isAdmin
-      ? { $set: { role: 'admin', status: 'approved' } }
-      : { $setOnInsert: { role: 'user', status: 'pending' } },
+    {
+      $setOnInsert: {
+        role: isAdmin ? 'admin' : 'user',
+        status: isAdmin ? 'approved' : 'pending'
+      }
+    },
     { upsert: true }
   );
   
