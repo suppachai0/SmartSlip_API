@@ -892,6 +892,7 @@ async function processLineEvent(event: line.WebhookEvent): Promise<void> {
 
     // Check if user clicked or typed summary request (from Rich Menu or message)
     const summaryTriggers = [
+      'ผมอยากดูสรุป',
       'ฉันต้องการสรุปยอด',
       'สรุปยอด',
       'สรุปค่าใช้จ่าย',
