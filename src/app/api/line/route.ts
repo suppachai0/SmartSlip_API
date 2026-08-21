@@ -555,12 +555,24 @@ async function handleSummaryPeriod(
       recentListText += `• ${r.storeName || 'LINE Upload'}: ฿${Number(r.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} (${dateStr})\n`;
     });
 
-    const messageText = `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 จำนวนใบเสร็จ: ${count} ใบ\n💰 ยอดรวมทั้งหมด: ฿${totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${storeListText}${recentListText}\n🌐 ดูรายละเอียดเพิ่มเติมได้ที่เว็บไซต์:\nhttps://smart-slip-nine.vercel.app/`;
+    const messageText = `📊 ${title}\n📅 ช่วงเวลา: ${periodText}\n\n🧾 จำนวนใบเสร็จ: ${count} ใบ\n💰 ยอดรวมทั้งหมด: ฿${totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${storeListText}${recentListText}`;
 
+    // Send summary text + button to dashboard (avoid URL preview conflicts)
     await sendLineReply(replyToken, [
       {
         type: 'text',
         text: messageText,
+      } as any,
+      {
+        type: 'buttons',
+        text: '📱 ดูรายละเอียดเพิ่มเติมในแดชบอร์ด SmartSlip',
+        actions: [
+          {
+            type: 'uri',
+            label: '🔗 เปิดแดชบอร์ด',
+            uri: 'https://smart-slip-nine.vercel.app/',
+          }
+        ],
       } as any,
     ]);
   } catch (error: any) {
